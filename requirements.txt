@@ -1,11 +1,7 @@
-pinecone-client
 openai
-anthropic
 python-dotenv
 streamlit
-langchain
-langchain-openai
-langchain-anthropic
-pandas
 google-auth
 google-auth-oauthlib
+pandas
+PyYAML
