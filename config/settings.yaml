@@ -1,0 +1,7 @@
+# Default date range for the pricing run
+# Use YYYY-MM-DD format
+start_date: "2025-01-01"  # <<< Set your desired start date
+end_date: "2025-12-31"    # <<< Set your desired end date
+
+# Base directory for output files
+output_directory: "output/"

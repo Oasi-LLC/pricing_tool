@@ -1,0 +1,189 @@
+# src/pricing_engine/dataloader.py
+
+import pandas as pd
+from pathlib import Path
+import datetime
+from typing import Dict, Set, Tuple, Any
+
+# Assuming utils.py is in the same directory or Python path is set correctly
+from . import utils # Use relative import within the package
+
+def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple[pd.DataFrame, Dict[str, str], Set[Tuple[str, str]], Dict[str, float]]:
+    """
+    Loads and preprocesses all necessary data for a given property.
+
+    Args:
+        property_name: The identifier of the property (e.g., 'fb1'),
+                       corresponding to the data subdirectory name.
+        property_config: The configuration dictionary for this specific property
+                         loaded from properties.yaml.
+
+    Returns:
+        A tuple containing:
+        - rate_table_df: DataFrame of the property's rate table.
+        - date_tier_map: Dictionary mapping 'YYYY-MM-DD' -> tier_group string.
+        - booked_blocked_set: Set of tuples ('listing_name', 'YYYY-MM-DD')
+                              for dates that are booked or blocked.
+        - occupancy_map: Dictionary mapping 'YYYY-MM-DD' -> occupancy percentage (0-100).
+
+    Raises:
+        FileNotFoundError: If any required CSV file is missing.
+        KeyError: If expected columns are missing in the CSV files.
+        ValueError: If critical data cannot be processed (e.g., date parsing).
+    """
+    print(f"--- Loading data for property: {property_name} ---")
+    base_path = Path("data") / property_name
+    total_listings_for_property = len(property_config.get('listings', []))
+    if total_listings_for_property == 0:
+        raise ValueError(f"No listings found in configuration for property '{property_name}'. Cannot calculate occupancy.")
+
+    # --- Load Rate Table ---
+    rate_table_path = base_path / f"rate_table_{property_name}.csv"
+    try:
+        rate_table_df = pd.read_csv(rate_table_path)
+        # Basic validation (add more checks as needed)
+        required_rate_cols = ['tier_group', 'day_group', 'booking_window', 'occupancy_min_pct', 'occupancy_max_pct']
+        # Add expected rate group columns based on config
+        for rate_col in property_config.get('rate_group_mapping', {}).keys():
+             required_rate_cols.append(rate_col) # Assumes column names match keys directly
+
+        if not all(col in rate_table_df.columns for col in required_rate_cols):
+             raise KeyError(f"Rate table missing one or more required columns: {required_rate_cols}")
+        print(f"Loaded Rate Table: {rate_table_path}")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Rate table file not found: {rate_table_path}")
+    except Exception as e:
+        raise ValueError(f"Error loading or validating rate table {rate_table_path}: {e}")
+
+
+    # --- Load Date Tiers ---
+    dates_tiers_path = base_path / f"dates_tiers_{property_name}.csv"
+    date_tier_map: Dict[str, str] = {}
+    try:
+        # Specify column names if CSV has no header or different names
+        # Assuming columns are 'date', 'day_of_week', 'tier_group' (index 0, 1, 2)
+        # Adjust 'usecols' and column names/indices as per your actual CSV structure
+        dates_tiers_df = pd.read_csv(
+            dates_tiers_path,
+            parse_dates=['date'], # Attempt to parse the first column as date
+            usecols=[0, 2], # Assuming date is col 0, tier is col 2
+            header=0 # Assumes first row IS a header. Change to None if no header
+            # names=['date', 'tier_group'] # Use if no header, ensure matches usecols
+        )
+        # Rename columns for clarity if needed after loading based on index
+        if len(dates_tiers_df.columns) == 2:
+            dates_tiers_df.columns = ['date', 'tier_group']
+
+        if not pd.api.types.is_datetime64_any_dtype(dates_tiers_df['date']):
+             raise ValueError("Could not parse 'date' column as datetime.")
+
+        for _, row in dates_tiers_df.iterrows():
+             # Ensure date is valid and format it; handle potential NaT dates
+             if pd.notna(row['date']) and pd.notna(row['tier_group']):
+                  date_str = utils.format_date(row['date'].date())
+                  date_tier_map[date_str] = str(row['tier_group']).strip() # Ensure tier is string
+        print(f"Loaded Date Tiers: {dates_tiers_path}, {len(date_tier_map)} entries processed.")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Dates tiers file not found: {dates_tiers_path}")
+    except Exception as e:
+        raise ValueError(f"Error loading or processing date tiers {dates_tiers_path}: {e}")
+
+
+    # --- Load PL Daily (for Booked/Blocked Status) ---
+    pl_daily_path = base_path / f"pl_daily_{property_name}.csv"
+    booked_blocked_set: Set[Tuple[str, str]] = set()
+    try:
+        # Adjust column names to match your CSV ('Date Corrected', 'Listing', etc.)
+        pl_df = pd.read_csv(
+            pl_daily_path,
+            parse_dates=['date_corrected'], # Use the actual date column name
+            usecols=['date_corrected', 'listing', 'no_booked', 'no_blocked'] # Actual names
+        )
+
+        # Convert numeric columns, coercing errors to NaN
+        pl_df['no_booked'] = pd.to_numeric(pl_df['no_booked'], errors='coerce').fillna(0)
+        pl_df['no_blocked'] = pd.to_numeric(pl_df['no_blocked'], errors='coerce').fillna(0)
+
+        if not pd.api.types.is_datetime64_any_dtype(pl_df['date_corrected']):
+             raise ValueError("Could not parse 'date_corrected' column as datetime.")
+
+        # Filter for relevant rows
+        relevant_pl = pl_df[ (pl_df['no_booked'] > 0) | (pl_df['no_blocked'] > 0) ].copy()
+
+        # Process into the set
+        for _, row in relevant_pl.iterrows():
+            if pd.notna(row['date_corrected']) and pd.notna(row['listing']):
+                date_str = utils.format_date(row['date_corrected'].date())
+                listing_name = str(row['listing']).strip()
+                booked_blocked_set.add((listing_name, date_str))
+        print(f"Loaded PL Daily: {pl_daily_path}, {len(booked_blocked_set)} booked/blocked entries found.")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"PL Daily file not found: {pl_daily_path}")
+    except KeyError as e:
+         raise KeyError(f"Missing expected column in {pl_daily_path}: {e}. Check usecols.")
+    except Exception as e:
+        raise ValueError(f"Error loading or processing PL Daily {pl_daily_path}: {e}")
+
+
+    # --- Load Resdata (for Occupancy Calculation) ---
+    resdata_path = base_path / f"resdata_{property_name}.csv"
+    occupancy_map: Dict[str, float] = {}
+    try:
+        # Adjust column names as necessary ('check_in_date', 'check_out_date', 'status')
+        res_df = pd.read_csv(
+            resdata_path,
+            parse_dates=['check_in_date', 'check_out_date'], # Actual names
+            usecols=['check_in_date', 'check_out_date', 'status'] # Assumes a 'status' column exists
+        )
+
+        # --- !!! IMPORTANT: Adapt this filter to your data !!! ---
+        # Filter for confirmed reservations - using 'status' column as an example
+        confirmed_filter = res_df['status'].str.lower() == 'confirmed'
+        # Add other conditions if needed (e.g., non-cancelled, non-no-show)
+        confirmed_res = res_df[confirmed_filter].copy()
+
+        if not pd.api.types.is_datetime64_any_dtype(confirmed_res['check_in_date']):
+             raise ValueError("Could not parse 'check_in_date' column as datetime.")
+        if not pd.api.types.is_datetime64_any_dtype(confirmed_res['check_out_date']):
+             raise ValueError("Could not parse 'check_out_date' column as datetime.")
+
+        print(f"Found {len(confirmed_res)} confirmed reservations in {resdata_path}.")
+
+        # Expand reservations into daily stays (one row per occupied night)
+        daily_stays_list = []
+        for _, row in confirmed_res.iterrows():
+            # Check-out date is the morning after the last night stayed
+            # Need date range from check_in up to, but not including, check_out
+            if pd.notna(row['check_in_date']) and pd.notna(row['check_out_date']) and row['check_out_date'] > row['check_in_date']:
+                # Generate dates for each night stayed
+                # `closed='left'` includes the start date but excludes the end date
+                date_range = pd.date_range(row['check_in_date'], row['check_out_date'], freq='D', closed='left')
+                for stay_date in date_range:
+                    daily_stays_list.append({'stay_date': stay_date.date()}) # Store only date part
+
+        if not daily_stays_list:
+            print("Warning: No valid daily stays generated from reservation data.")
+            # Occupancy map will remain empty, which is handled later
+        else:
+            daily_stays_df = pd.DataFrame(daily_stays_list)
+
+            # Count stays per date
+            daily_counts = daily_stays_df.groupby('stay_date').size()
+
+            # Calculate occupancy percentage
+            occupancy_percentage = (daily_counts / total_listings_for_property) * 100
+
+            # Convert to dictionary: 'YYYY-MM-DD' -> percentage
+            occupancy_map = {utils.format_date(idx): val for idx, val in occupancy_percentage.items()}
+            print(f"Processed Resdata: Occupancy calculated for {len(occupancy_map)} dates.")
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Resdata file not found: {resdata_path}")
+    except KeyError as e:
+        raise KeyError(f"Missing expected column in {resdata_path}: {e}. Check status column name/filter.")
+    except Exception as e:
+        raise ValueError(f"Error loading or processing Resdata {resdata_path}: {e}")
+
+
+    print(f"--- Data loading complete for {property_name} ---")
+    return rate_table_df, date_tier_map, booked_blocked_set, occupancy_map
