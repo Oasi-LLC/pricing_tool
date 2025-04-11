@@ -17,10 +17,9 @@ properties:
       - "Bluebonnet"
     rate_group_mapping:
       # Maps listing groups to rate column NAMES in data/fb1/rate_table_fb1.csv
-      # !!! IMPORTANT: Ensure these column names (rate_small, etc.) exist in your CSV !!!
-      # !!! IMPORTANT: Adjust the lists to match fb1's actual listing groups !!!
-      rate_small: ["Sage Safari", "Cocoon", "Buckeye Bungalow", "Lantana Dome", "Bluebonnet"]
-      rate_medium: ["Monarch", "Spyglass", "Live Oak Lodge", "Walnut House"]
+      # !!! IMPORTANT: Ensure these column names match your CSV !!!
+      rate_medium: ["Sage Safari", "Cocoon", "Buckeye Bungalow", "Lantana Dome", "Bluebonnet"]
+      rate_small: ["Monarch", "Spyglass", "Live Oak Lodge", "Walnut House"]
       rate_large: ["Cedar Haus", "Juniper Haus", "Pecan Haus"]
 
   # property_b: # Add other properties later following the same structure

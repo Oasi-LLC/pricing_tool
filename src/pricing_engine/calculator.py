@@ -9,7 +9,7 @@ from . import utils # Use relative import within the package
 
 def _get_rate_group_for_listing(listing_name: str, property_config: dict) -> Optional[str]:
     """
-    Finds the rate group key (e.g., 'rate_small', 'rate_medium') for a given listing
+    Finds the rate group key (e.g., 'hard_unit', 'soft_unit') for a given listing
     based on the property's rate_group_mapping configuration.
 
     Args:
@@ -17,13 +17,13 @@ def _get_rate_group_for_listing(listing_name: str, property_config: dict) -> Opt
         property_config: The configuration dictionary for the specific property.
 
     Returns:
-        The rate group key string (which should match a column name prefix in the
+        The rate group key string (which should match a column name in the
         rate table) or None if the listing is not found in any mapping.
     """
     rate_mapping = property_config.get('rate_group_mapping', {})
     for group_key, listings_in_group in rate_mapping.items():
         if listing_name in listings_in_group:
-            return group_key # Returns the key like 'rate_small'
+            return group_key # Returns the key like 'hard_unit'
     print(f"Warning: Listing '{listing_name}' not found in any rate_group_mapping for property. Cannot determine rate column.")
     return None
 
@@ -69,12 +69,12 @@ def lookup_rate(
 
     # Add urgency band filter conditionally
     if urgency_filter_active:
-        # Assumes rate table has an 'urgency_band' column, handle missing values
-        mask &= (rate_table_df['urgency_band'].fillna('') == urgency_band)
+        # Assumes rate table has an 'Urgency Breakdown' column, handle missing values
+        mask &= (rate_table_df['Urgency Breakdown'].fillna('') == urgency_band)
     else:
         # If no urgency band applies to the request, match rows where
         # the table's urgency band is also empty/null (standard rule)
-        mask &= (rate_table_df['urgency_band'].fillna('') == '')
+        mask &= (rate_table_df['Urgency Breakdown'].fillna('') == '')
 
 
     matching_rows = rate_table_df[mask]

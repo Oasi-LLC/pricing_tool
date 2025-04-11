@@ -42,13 +42,18 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     try:
         rate_table_df = pd.read_csv(rate_table_path)
         # Basic validation (add more checks as needed)
-        required_rate_cols = ['tier_group', 'day_group', 'booking_window', 'occupancy_min_pct', 'occupancy_max_pct']
+        required_rate_cols = ['tier_group', 'day_group', 'booking_window', 'Occupancy Band', 'occupancy_min_pct', 'occupancy_max_pct']
         # Add expected rate group columns based on config
         for rate_col in property_config.get('rate_group_mapping', {}).keys():
              required_rate_cols.append(rate_col) # Assumes column names match keys directly
 
         if not all(col in rate_table_df.columns for col in required_rate_cols):
              raise KeyError(f"Rate table missing one or more required columns: {required_rate_cols}")
+
+        # Clean rate columns by removing dollar signs and extra spaces
+        for rate_col in property_config.get('rate_group_mapping', {}).keys():
+            rate_table_df[rate_col] = rate_table_df[rate_col].str.replace('$', '').str.strip()
+
         print(f"Loaded Rate Table: {rate_table_path}")
     except FileNotFoundError:
         raise FileNotFoundError(f"Rate table file not found: {rate_table_path}")
@@ -61,14 +66,12 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     date_tier_map: Dict[str, str] = {}
     try:
         # Specify column names if CSV has no header or different names
-        # Assuming columns are 'date', 'day_of_week', 'tier_group' (index 0, 1, 2)
-        # Adjust 'usecols' and column names/indices as per your actual CSV structure
+        # Assuming columns are 'Date', 'Day', 'Tier' (index 0, 1, 2)
         dates_tiers_df = pd.read_csv(
             dates_tiers_path,
-            parse_dates=['date'], # Attempt to parse the first column as date
-            usecols=[0, 2], # Assuming date is col 0, tier is col 2
-            header=0 # Assumes first row IS a header. Change to None if no header
-            # names=['date', 'tier_group'] # Use if no header, ensure matches usecols
+            parse_dates=['Date'], # Attempt to parse the first column as date
+            usecols=[0, 2], # Assuming Date is col 0, Tier is col 2
+            header=0 # Assumes first row IS a header
         )
         # Rename columns for clarity if needed after loading based on index
         if len(dates_tiers_df.columns) == 2:
@@ -126,28 +129,25 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
 
 
     # --- Load Resdata (for Occupancy Calculation) ---
-    resdata_path = base_path / f"resdata_{property_name}.csv"
+    resdata_path = base_path / f"resdata_{property_name}_comma.csv"
     occupancy_map: Dict[str, float] = {}
     try:
-        # Adjust column names as necessary ('check_in_date', 'check_out_date', 'status')
+        # Adjust column names as necessary ('check_in_date', 'check_out_date')
         res_df = pd.read_csv(
             resdata_path,
             parse_dates=['check_in_date', 'check_out_date'], # Actual names
-            usecols=['check_in_date', 'check_out_date', 'status'] # Assumes a 'status' column exists
+            usecols=['check_in_date', 'check_out_date'] # No status column
         )
 
-        # --- !!! IMPORTANT: Adapt this filter to your data !!! ---
-        # Filter for confirmed reservations - using 'status' column as an example
-        confirmed_filter = res_df['status'].str.lower() == 'confirmed'
-        # Add other conditions if needed (e.g., non-cancelled, non-no-show)
-        confirmed_res = res_df[confirmed_filter].copy()
+        # Since there's no status column, we'll assume all reservations are confirmed
+        confirmed_res = res_df.copy()
 
         if not pd.api.types.is_datetime64_any_dtype(confirmed_res['check_in_date']):
              raise ValueError("Could not parse 'check_in_date' column as datetime.")
         if not pd.api.types.is_datetime64_any_dtype(confirmed_res['check_out_date']):
              raise ValueError("Could not parse 'check_out_date' column as datetime.")
 
-        print(f"Found {len(confirmed_res)} confirmed reservations in {resdata_path}.")
+        print(f"Found {len(confirmed_res)} reservations in {resdata_path}.")
 
         # Expand reservations into daily stays (one row per occupied night)
         daily_stays_list = []
@@ -156,8 +156,8 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
             # Need date range from check_in up to, but not including, check_out
             if pd.notna(row['check_in_date']) and pd.notna(row['check_out_date']) and row['check_out_date'] > row['check_in_date']:
                 # Generate dates for each night stayed
-                # `closed='left'` includes the start date but excludes the end date
-                date_range = pd.date_range(row['check_in_date'], row['check_out_date'], freq='D', closed='left')
+                # Exclude the check-out date since it's not a night stayed
+                date_range = pd.date_range(row['check_in_date'], row['check_out_date'] - pd.Timedelta(days=1), freq='D')
                 for stay_date in date_range:
                     daily_stays_list.append({'stay_date': stay_date.date()}) # Store only date part
 
@@ -180,7 +180,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     except FileNotFoundError:
         raise FileNotFoundError(f"Resdata file not found: {resdata_path}")
     except KeyError as e:
-        raise KeyError(f"Missing expected column in {resdata_path}: {e}. Check status column name/filter.")
+        raise KeyError(f"Missing expected column in {resdata_path}: {e}. Check column names.")
     except Exception as e:
         raise ValueError(f"Error loading or processing Resdata {resdata_path}: {e}")
 
