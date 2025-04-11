@@ -1,0 +1,19 @@
+.env
+*.sla
+nca-toolkit-project-446011-67d246fdbccf.json
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
