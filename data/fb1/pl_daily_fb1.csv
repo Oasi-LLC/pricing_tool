@@ -1,4 +1,4 @@
-Listing ID,PMS Name,Date,Units,No. Booked,No. Blocked,blocking_units,Bookable Units,nightly_revenue,Vacant Units,Date Corrected,Listing,Day
+Listing ID,PMS Name,Date,Units,no_booked,no_blocked,blocking_units,Bookable Units,nightly_revenue,Vacant Units,date_corrected,listing,Day
 203812___362535,cloudbeds,1/1/21 0:00,1,0,1,1,0,0,0,1/1/21,Cocoon,Friday
 203812___364773,cloudbeds,1/1/21 0:00,1,0,1,1,0,0,0,1/1/21,Walnut House,Friday
 203812___364776,cloudbeds,1/1/21 0:00,1,0,1,1,0,0,0,1/1/21,Spyglass,Friday
