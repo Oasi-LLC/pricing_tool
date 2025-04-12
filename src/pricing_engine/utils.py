@@ -64,25 +64,30 @@ def get_day_group(d: datetime.date) -> str:
     else: # Friday (4), Saturday (5)
         return 'Fri-Sat'
 
-def get_booking_window_label(target_date: datetime.date, today: datetime.date) -> str:
+def get_booking_window_label(target_date: datetime.date, today: datetime.date, window_definitions: list) -> str:
     """
-    Calculates the booking window label (e.g., '0-9 Days (W1)') based on the
-    number of days between today and the target date.
+    Calculates the booking window label based on the number of days between
+    today and the target date, using definitions provided from configuration.
 
     Args:
         target_date: The future date for which the rate is being calculated.
         today: The current date (typically the date the script is run).
+        window_definitions: A list of dictionaries, each defining a window:
+                          e.g., [{\'label\': \'0-9 Days (W1)\', \'min_days\': 0, \'max_days\': 9}, ...]
 
     Returns:
-        A string representing the booking window label.
+        A string representing the booking window label, or a default/error label if none match.
 
     Raises:
-        TypeError: If inputs are not date or datetime objects.
+        TypeError: If date inputs are not date or datetime objects.
+        ValueError: If window_definitions is missing or invalid.
     """
     if not isinstance(target_date, (datetime.date, datetime.datetime)):
         raise TypeError("target_date must be a date or datetime object")
     if not isinstance(today, (datetime.date, datetime.datetime)):
         raise TypeError("today must be a date or datetime object")
+    if not window_definitions:
+        raise ValueError("Booking window definitions are missing or empty in property config.")
 
     # Ensure we are comparing dates only, ignoring time component
     if isinstance(target_date, datetime.datetime):
@@ -94,38 +99,54 @@ def get_booking_window_label(target_date: datetime.date, today: datetime.date) -
 
     # Handle cases where target_date is in the past relative to today
     if diff_days < 0:
-        # Or return a specific label like "Past Date"? For now, maps to shortest window.
-        return "0-9 Days (W1)" # Or potentially an empty string or error?
+        # Find the label associated with min_days = 0 (should be the shortest window)
+        for definition in window_definitions:
+            if definition.get('min_days') == 0:
+                return definition.get('label', 'ERROR: No 0-day window') # Return label or error
+        return "ERROR: No 0-day window defined" # Fallback if no 0-day window found
 
-    if diff_days <= 9: return "0-9 Days (W1)"
-    if diff_days <= 21: return "10-21 Days (W2)"
-    if diff_days <= 30: return "22-30 Days (W3)"
-    if diff_days <= 45: return "31-45 Days (W4)"
-    if diff_days <= 59: return "46-59 Days (W5)"
-    if diff_days <= 120: return "60-120 Days (W6)"
-    # This covers all cases where diff_days > 120
-    return ">120 Days (W7)"
+    # Find the matching window definition
+    for definition in window_definitions:
+        min_days = definition.get('min_days')
+        max_days = definition.get('max_days')
+        label = definition.get('label')
 
-def get_urgency_band(target_date: datetime.date, today: datetime.date) -> str:
+        # Basic validation of the definition structure
+        if min_days is None or max_days is None or label is None:
+             print(f"Warning: Invalid booking window definition found: {definition}. Skipping.")
+             continue
+
+        if min_days <= diff_days <= max_days:
+            return label
+
+    # Fallback if no window matches (shouldn't happen with a proper >X days definition)
+    print(f"Warning: No matching booking window definition found for diff_days={diff_days}. Using default fallback.")
+    return "ERROR: No Matching Window"
+
+def get_urgency_band(target_date: datetime.date, today: datetime.date, urgency_definitions: list) -> str:
     """
-    Calculates the urgency band ('0-1', '2-3', '4-6', '7-9') for close-in
-    bookings (target dates within 0-9 days from today). Returns an empty
-    string for dates further out or in the past.
+    Calculates the urgency band based on the number of days between today and
+    the target date, using definitions provided from configuration.
 
     Args:
         target_date: The future date for which the rate is being calculated.
         today: The current date.
+        urgency_definitions: A list of dictionaries defining urgency bands,
+                           e.g., [{\'label\': \'0-1\', \'min_days\': 0, \'max_days\': 1}, ...]
 
     Returns:
-        A string representing the urgency band or an empty string.
+        A string representing the urgency band label, or an empty string if none match or invalid config.
 
     Raises:
-        TypeError: If inputs are not date or datetime objects.
+        TypeError: If date inputs are not date or datetime objects.
     """
     if not isinstance(target_date, (datetime.date, datetime.datetime)):
         raise TypeError("target_date must be a date or datetime object")
     if not isinstance(today, (datetime.date, datetime.datetime)):
         raise TypeError("today must be a date or datetime object")
+    # It's okay if urgency_definitions is empty or None, we just return ""
+    if not urgency_definitions:
+        return "" # No definitions, no urgency band
 
     # Ensure we are comparing dates only
     if isinstance(target_date, datetime.datetime):
@@ -135,10 +156,22 @@ def get_urgency_band(target_date: datetime.date, today: datetime.date) -> str:
 
     diff_days = (target_date - today).days
 
-    if diff_days < 0: return "" # No urgency band for past dates
-    if diff_days <= 1: return "0-1"
-    if diff_days <= 3: return "2-3"
-    if diff_days <= 6: return "4-6"
-    if diff_days <= 9: return "7-9"
-    # For dates > 9 days out, there's no specific urgency band in this logic
-    return ""
+    if diff_days < 0:
+        return "" # No urgency band for past dates
+
+    # Find the matching urgency definition
+    for definition in urgency_definitions:
+        min_days = definition.get('min_days')
+        max_days = definition.get('max_days')
+        label = definition.get('label')
+
+        # Basic validation of the definition structure
+        if min_days is None or max_days is None or label is None:
+             print(f"Warning: Invalid urgency band definition found: {definition}. Skipping.")
+             continue
+
+        if min_days <= diff_days <= max_days:
+            return label
+
+    # If loop finishes without finding a match (e.g., diff_days >= 10 based on current config)
+    return "" # Default to no urgency band

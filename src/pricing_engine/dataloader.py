@@ -3,7 +3,7 @@
 import pandas as pd
 from pathlib import Path
 import datetime
-from typing import Dict, Set, Tuple, Any
+from typing import Dict, Set, Tuple, Any, Optional
 
 # Assuming utils.py is in the same directory or Python path is set correctly
 from . import utils # Use relative import within the package
@@ -31,7 +31,7 @@ def _parse_mixed_date(date_val: Any) -> pd.Timestamp:
             # If both attempts fail, return NaT
             return pd.NaT
 
-def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple[pd.DataFrame, Dict[str, str], Set[Tuple[str, str]], Dict[str, float]]:
+def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple[pd.DataFrame, Dict[str, str], Set[Tuple[str, str]], Dict[str, float], Optional[Dict[str, float]]]:
     """
     Loads and preprocesses all necessary data for a given property.
 
@@ -48,6 +48,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
         - booked_blocked_set: Set of tuples ('listing_id', 'YYYY-MM-DD')
                               for dates that are booked or blocked.
         - occupancy_map: Dictionary mapping 'YYYY-MM-DD' -> occupancy percentage (0-100).
+        - event_multiplier_map: Optional dictionary mapping 'YYYY-MM-DD' -> event multiplier (float). Returns None if file not found.
 
     Raises:
         FileNotFoundError: If any required CSV file is missing.
@@ -85,7 +86,15 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
 
         # Clean rate columns by removing dollar signs and extra spaces
         for rate_col in property_config.get('rate_group_mapping', {}).keys():
-            rate_table_df[rate_col] = rate_table_df[rate_col].str.replace('$', '').str.strip()
+            if rate_col in rate_table_df:
+                # Convert to string type FIRST, handling potential non-string data gracefully
+                rate_table_df[rate_col] = rate_table_df[rate_col].astype(str)
+                # Now apply string operations
+                rate_table_df[rate_col] = rate_table_df[rate_col].str.replace('$', '', regex=False).str.strip()
+                # Optional: Convert back to numeric if needed later, coercing errors
+                # rate_table_df[rate_col] = pd.to_numeric(rate_table_df[rate_col], errors='coerce')
+            else:
+                print(f"Warning: Rate column '{rate_col}' defined in properties.yaml but not found in rate table {rate_table_path}")
 
         print(f"Loaded Rate Table: {rate_table_path}")
     except FileNotFoundError:
@@ -172,6 +181,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     # --- Load Resdata (for Occupancy Calculation) ---
     resdata_path = base_path / f"resdata_{property_name}.csv"
     occupancy_map: Dict[str, float] = {}
+    event_multiplier_map = None
     try:
         # UPDATED: Load date columns as object/string first
         res_df = pd.read_csv(
@@ -244,5 +254,50 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
         raise ValueError(f"Error loading or processing Resdata {resdata_path}: {e}")
 
 
+    # --- Load Event Modifiers (Optional) ---
+    events_path = base_path / f"events_mod_{property_name}.csv"
+    # Initialize here, before the try block, ensures it's always defined
+    event_multiplier_map: Optional[Dict[str, float]] = None 
+    try:
+        if events_path.exists():
+            events_df = pd.read_csv(
+                events_path,
+                usecols=['Date', 'Multiplier'], # Expect these columns
+                parse_dates=['Date']
+            )
+
+            # Validate columns and data types
+            if not pd.api.types.is_datetime64_any_dtype(events_df['Date']):
+                raise ValueError("Could not parse 'Date' column as datetime in events file.")
+            if not pd.api.types.is_numeric_dtype(events_df['Multiplier']):
+                 # Attempt conversion, coercing errors
+                 events_df['Multiplier'] = pd.to_numeric(events_df['Multiplier'], errors='coerce')
+                 if events_df['Multiplier'].isnull().any():
+                     print(f"Warning: Non-numeric Multiplier values found in {events_path}. These rows will be ignored.")
+                     events_df = events_df.dropna(subset=['Multiplier']) # Drop rows that failed conversion
+
+            # Create the dictionary map
+            event_multiplier_map = {} # Initialize the dictionary ONLY if file exists and is valid so far
+            for _, row in events_df.iterrows():
+                 if pd.notna(row['Date']) and pd.notna(row['Multiplier']):
+                     date_obj = row['Date'].date() # Get date object
+                     date_str = utils.format_date(date_obj) # Format date
+                     multiplier = float(row['Multiplier']) # Ensure float
+                     event_multiplier_map[date_str] = multiplier
+            print(f"Loaded Event Modifiers: {events_path}, {len(event_multiplier_map)} entries processed.")
+        else:
+            print(f"Event modifier file not found (optional): {events_path}")
+            # event_multiplier_map remains None as initialized
+
+    except FileNotFoundError: # Should technically be caught by exists(), but for safety
+        print(f"Event modifier file not found (optional): {events_path}")
+        event_multiplier_map = None # Explicitly None
+    except KeyError as e:
+         print(f"Warning: Missing expected column in {events_path}: {e}. Skipping event modifiers.")
+         event_multiplier_map = None # Skip if columns missing
+    except Exception as e:
+        print(f"Warning: Error loading or processing Event Modifiers {events_path}: {e}. Skipping event modifiers.")
+        event_multiplier_map = None # Skip on other errors
+
     print(f"--- Data loading complete for {property_name} ---")
-    return rate_table_df, date_tier_map, booked_blocked_set, occupancy_map
+    return rate_table_df, date_tier_map, booked_blocked_set, occupancy_map, event_multiplier_map

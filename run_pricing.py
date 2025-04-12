@@ -77,7 +77,7 @@ def main():
 
     # --- Load and Preprocess Data ---
     try:
-        rate_table_df, date_tier_map, booked_blocked_set, occupancy_map = \
+        rate_table_df, date_tier_map, booked_blocked_set, occupancy_map, event_multiplier_map = \
             dataloader.load_and_preprocess_data(property_to_run, property_config)
     except (FileNotFoundError, KeyError, ValueError) as e:
         print(f"Error during data loading: {e}")
@@ -116,19 +116,26 @@ def main():
             # Get factors for this date/listing
             occupancy_pct = occupancy_map.get(date_str, 0.0)
             tier_group = date_tier_map.get(date_str, 'T0') # Default to T0 if date not in map
-            booking_window_label = utils.get_booking_window_label(current_date, today)
+            # Get booking window definitions from the specific property config
+            window_definitions = property_config.get('booking_window_definitions', [])
+            booking_window_label = utils.get_booking_window_label(current_date, today, window_definitions)
             day_group = utils.get_day_group(current_date)
             occupancy_band = (occupancy_pct // 10) * 10 # Floor to nearest 10%
 
             # Determine if urgency calculation is needed
             urgency_band = ""
+            # Get urgency definitions from config
+            urgency_definitions = property_config.get('urgency_band_definitions', [])
+            # Check if urgency calculation is relevant based on Tier, Window, Occupancy
+            # (This condition itself might eventually move to config if needed)
             if (tier_group in ["T10-T12", "T13-T15"]) and \
                (booking_window_label == "0-9 Days (W1)") and \
                (occupancy_pct <= 30):
-               urgency_band = utils.get_urgency_band(current_date, today)
+               # Calculate urgency band using config definitions
+               urgency_band = utils.get_urgency_band(current_date, today, urgency_definitions)
 
-            # Look up suggested rate
-            suggested_rate = calculator.lookup_rate(
+            # Look up suggested rate - Now returns (rate, error_message)
+            suggested_rate_val, lookup_error = calculator.lookup_rate(
                 rate_table_df=rate_table_df,
                 tier_group=tier_group,
                 day_group=day_group,
@@ -138,29 +145,71 @@ def main():
                 rate_group_key=rate_group_key
             )
 
-            # Apply adjustment rules - Pass Listing ID now
-            adjusted_rate = calculator.apply_adjustment_rules(
-                current_date=current_date,
-                listing_id=listing_id, # Pass the ID
-                occupancy_pct=occupancy_pct,
-                rate_table_df=rate_table_df,
-                date_tier_map=date_tier_map,
-                booked_blocked_set=booked_blocked_set,
-                booking_window_label=booking_window_label,
-                property_config=property_config,
-                today=today
-            )
+            # --- Calculate Final Rate and Determine if Adjustment Occurred ---
+            final_rate = suggested_rate_val # Start with the base suggested rate (which might be None)
+            adjustment_applied = False # Flag to track if any change happened
+            error_details_str = lookup_error # Store potential lookup error
 
-            # Append result - Still store the Listing Name for readability
+            # 1. Apply Rule-Based Adjustments
+            # Only apply if base lookup didn't already fail
+            if error_details_str is None:
+                rule_adjusted_rate = calculator.apply_adjustment_rules(
+                    current_date=current_date,
+                    listing_id=listing_id, # Pass the ID
+                    occupancy_pct=occupancy_pct,
+                    rate_table_df=rate_table_df,
+                    date_tier_map=date_tier_map,
+                    booked_blocked_set=booked_blocked_set,
+                    booking_window_label=booking_window_label,
+                    property_config=property_config,
+                    today=today
+                )
+
+                if pd.notna(rule_adjusted_rate):
+                    if pd.notna(final_rate) and rule_adjusted_rate != final_rate:
+                        adjustment_applied = True
+                    elif not pd.notna(final_rate):
+                        adjustment_applied = True
+                    final_rate = rule_adjusted_rate
+            #else: rule adjustments are skipped if base lookup failed
+
+            # 2. Apply Event Multiplier (to the rate determined so far)
+            event_multiplier = 1.0
+            if event_multiplier_map is not None:
+                event_multiplier = event_multiplier_map.get(date_str, 1.0)
+
+            # Only apply event multiplier if base lookup + rule didn't fail
+            if error_details_str is None and event_multiplier != 1.0:
+                if pd.notna(final_rate):
+                    rate_before_event_multiplier = final_rate # Store for comparison
+                    final_rate = final_rate * event_multiplier
+                    if abs(final_rate - rate_before_event_multiplier) > 0.001:
+                        adjustment_applied = True
+                #else: Cannot apply multiplier to a None rate
+
+            # Determine the value for the output columns
+            output_suggested_rate = None
+            output_adjusted_rate = None
+
+            if error_details_str is not None:
+                output_suggested_rate = "ERROR: Rate Lookup Failed"
+            elif pd.notna(suggested_rate_val):
+                output_suggested_rate = round(suggested_rate_val)
+
+            if adjustment_applied and pd.notna(final_rate):
+                 output_adjusted_rate = round(final_rate)
+
+            # Append result - including error details
             results.append({
                 "listing": listing_name,
-                "listing_id": listing_id, # Optionally add ID to output
+                "listing_id": listing_id,
                 "date": date_str,
                 "occupancy_percent": round(occupancy_pct, 2),
-                "suggested_rate": round(suggested_rate) if pd.notna(suggested_rate) else None, # Round if not NaN/None
-                "adjusted_rate": round(adjusted_rate) if pd.notna(adjusted_rate) else None, # Round if not NaN/None
+                "suggested_rate": output_suggested_rate, # Base rate or Error string
+                "adjusted_rate": output_adjusted_rate, # Final rate ONLY if adjustment occurred
                 "final_tier": tier_group,
-                "booking_window": booking_window_label
+                "booking_window": booking_window_label,
+                "error_details": error_details_str # Add the error message column
             })
 
     # --- Process and Save Output ---
@@ -177,9 +226,11 @@ def main():
     output_path = output_dir / output_filename
 
     try:
-        # Convert rate columns to nullable integers for cleaner CSV output (shows empty instead of NaN)
-        output_df['suggested_rate'] = output_df['suggested_rate'].astype('Int64')
+        # Convert rate columns - handle potential string errors in suggested_rate
+        # We keep suggested_rate as object/string due to potential error message
+        # output_df['suggested_rate'] = output_df['suggested_rate'].astype('Int64')
         output_df['adjusted_rate'] = output_df['adjusted_rate'].astype('Int64')
+        output_df['error_details'] = output_df['error_details'].astype(str).fillna('') # Ensure string, fill NaN
 
         output_df.to_csv(output_path, index=False)
         print("-" * 30)
