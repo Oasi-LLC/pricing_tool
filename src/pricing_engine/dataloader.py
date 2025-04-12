@@ -8,6 +8,29 @@ from typing import Dict, Set, Tuple, Any
 # Assuming utils.py is in the same directory or Python path is set correctly
 from . import utils # Use relative import within the package
 
+def _parse_mixed_date(date_val: Any) -> pd.Timestamp:
+    """Attempts to parse a date string in M/D/YY format first,
+       then falls back to parsing as an Excel serial number if the first fails.
+    """
+    if pd.isna(date_val):
+        return pd.NaT
+    try:
+        # Attempt standard M/D/YY format first
+        # Use errors='raise' to trigger the except block if format is wrong
+        return pd.to_datetime(date_val, format='%m/%d/%y', errors='raise')
+    except (ValueError, TypeError):
+        try:
+            # If standard parse fails, attempt Excel serial number format
+            # Convert to numeric first, coercing errors (like non-numeric strings)
+            numeric_val = pd.to_numeric(date_val, errors='coerce')
+            if pd.isna(numeric_val):
+                return pd.NaT # Value wasn't a valid number
+            # Origin for Excel serial dates (adjust if using Mac 1904 base)
+            return pd.to_datetime(numeric_val, unit='D', origin='1899-12-30')
+        except (ValueError, TypeError):
+            # If both attempts fail, return NaT
+            return pd.NaT
+
 def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple[pd.DataFrame, Dict[str, str], Set[Tuple[str, str]], Dict[str, float]]:
     """
     Loads and preprocesses all necessary data for a given property.
@@ -75,17 +98,17 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     dates_tiers_path = base_path / f"dates_tiers_{property_name}.csv"
     date_tier_map: Dict[str, str] = {}
     try:
-        # Specify column names if CSV has no header or different names
-        # Assuming columns are 'Date', 'Day', 'Tier' (index 0, 1, 2)
+        # UPDATED: Hardcode for fb1 comma separator and column names
         dates_tiers_df = pd.read_csv(
             dates_tiers_path,
-            parse_dates=['Date'], # Attempt to parse the first column as date
-            usecols=[0, 2], # Assuming Date is col 0, Tier is col 2
-            header=0 # Assumes first row IS a header
+            sep=',',              # fb1 uses comma
+            usecols=['Date', 'Tier'], # Use column names matching fb1
+            parse_dates=['Date'],   # Parse the 'Date' column
+            header=0             # Assumes first row IS a header
         )
-        # Rename columns for clarity if needed after loading based on index
-        if len(dates_tiers_df.columns) == 2:
-            dates_tiers_df.columns = ['date', 'tier_group']
+        # Rename columns for clarity after loading
+        # Ensure internal code uses consistent names ('date', 'tier_group')
+        dates_tiers_df.columns = ['date', 'tier_group']
 
         if not pd.api.types.is_datetime64_any_dtype(dates_tiers_df['date']):
              raise ValueError("Could not parse 'date' column as datetime.")
@@ -106,25 +129,27 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     pl_daily_path = base_path / f"pl_daily_{property_name}.csv"
     booked_blocked_set: Set[Tuple[str, str]] = set()
     try:
-        # Adjust column names to match your CSV ('Date', 'Listing ID', etc.)
+        # UPDATED: Hardcode column names for fb1 pl_daily
         pl_df = pd.read_csv(
             pl_daily_path,
             parse_dates=['Date'], # Use the actual 'Date' column name from CSV
             # Ensure 'Listing ID' column exists in your CSV and is used here
-            usecols=['Date', 'Listing ID', 'no_booked', 'no_blocked'], # Use Listing ID and Date
+            usecols=['Date', 'Listing ID', 'No. Booked', 'No. Blocked'], # Use fb1 names
             dtype={'Listing ID': str} # Ensure Listing ID is read as string
         )
 
         # Convert numeric columns, coercing errors to NaN
-        pl_df['no_booked'] = pd.to_numeric(pl_df['no_booked'], errors='coerce').fillna(0)
-        pl_df['no_blocked'] = pd.to_numeric(pl_df['no_blocked'], errors='coerce').fillna(0)
+        # UPDATED: Use actual fb1 column names
+        pl_df['No. Booked'] = pd.to_numeric(pl_df['No. Booked'], errors='coerce').fillna(0)
+        pl_df['No. Blocked'] = pd.to_numeric(pl_df['No. Blocked'], errors='coerce').fillna(0)
 
         # Use 'Date' column for validation
         if not pd.api.types.is_datetime64_any_dtype(pl_df['Date']):
              raise ValueError("Could not parse 'Date' column as datetime.")
 
         # Filter for relevant rows
-        relevant_pl = pl_df[ (pl_df['no_booked'] > 0) | (pl_df['no_blocked'] > 0) ].copy()
+        # UPDATED: Use actual fb1 column names
+        relevant_pl = pl_df[ (pl_df['No. Booked'] > 0) | (pl_df['No. Blocked'] > 0) ].copy()
 
         # Process into the set
         for _, row in relevant_pl.iterrows():
@@ -132,15 +157,8 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
             if pd.notna(row['Date']) and pd.notna(row['Listing ID']):
                 date_str = utils.format_date(row['Date'].date())
                 listing_id = str(row['Listing ID']).strip()
-                # No longer need to convert ID to Name here
                 # Directly add the ID to the set
                 booked_blocked_set.add((listing_id, date_str))
-                # Remove the old conversion and warning logic
-                # listing_name = listing_id_map.get(listing_id)
-                # if listing_name:
-                #     booked_blocked_set.add((listing_name, date_str))
-                # else:
-                #     print(f"Warning: Listing ID '{listing_id}' from {pl_daily_path} not found in properties.yaml configuration for {property_name}.")
 
         print(f"Loaded PL Daily: {pl_daily_path}, {len(booked_blocked_set)} booked/blocked entries processed.")
     except FileNotFoundError:
@@ -155,32 +173,50 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     resdata_path = base_path / f"resdata_{property_name}.csv"
     occupancy_map: Dict[str, float] = {}
     try:
-        # Adjust column names as necessary ('check_in_date', 'check_out_date')
+        # UPDATED: Load date columns as object/string first
         res_df = pd.read_csv(
             resdata_path,
-            parse_dates=['check_in_date', 'check_out_date'], # Actual names
-            usecols=['check_in_date', 'check_out_date'] # No status column
+            usecols=['Start Date', 'End Date'],     # Use fb1 names
+            dtype={'Start Date': object, 'End Date': object} # Read as generic object/string
         )
 
-        # Since there's no status column, we'll assume all reservations are confirmed
-        confirmed_res = res_df.copy()
+        # Apply the custom parsing function to each date column
+        res_df['Start Date_dt'] = res_df['Start Date'].apply(_parse_mixed_date)
+        res_df['End Date_dt'] = res_df['End Date'].apply(_parse_mixed_date)
 
-        if not pd.api.types.is_datetime64_any_dtype(confirmed_res['check_in_date']):
-             raise ValueError("Could not parse 'check_in_date' column as datetime.")
-        if not pd.api.types.is_datetime64_any_dtype(confirmed_res['check_out_date']):
-             raise ValueError("Could not parse 'check_out_date' column as datetime.")
+        # Identify rows that failed parsing (are NaT after apply)
+        failed_parse_mask = res_df['Start Date_dt'].isnull() | res_df['End Date_dt'].isnull()
+        if failed_parse_mask.any():
+            print("--- Warning: Rows with unparseable date formats found in resdata_fb1.csv ---")
+            print("Original Start/End Date strings for failed rows:")
+            # Show original strings for rows that failed BOTH parsing attempts
+            print(res_df.loc[failed_parse_mask, ['Start Date', 'End Date']])
+            print("---------------------------------------------------------------------")
+            # Drop rows with invalid dates before proceeding
+            res_df = res_df[~failed_parse_mask].copy()
+        else:
+             print("All resdata dates parsed successfully using custom parser.")
 
-        print(f"Found {len(confirmed_res)} reservations in {resdata_path}.")
+        # Now 'Start Date_dt' and 'End Date_dt' columns contain datetime objects
+        confirmed_res = res_df.copy() # Use the cleaned dataframe
+
+        # No need to check dtype again here
+        print(f"Found {len(confirmed_res)} valid reservations in {resdata_path} after handling date errors.")
 
         # Expand reservations into daily stays (one row per occupied night)
         daily_stays_list = []
-        for _, row in confirmed_res.iterrows():
+        for _, row in confirmed_res.iterrows(): # Use _ if index not needed
             # Check-out date is the morning after the last night stayed
             # Need date range from check_in up to, but not including, check_out
-            if pd.notna(row['check_in_date']) and pd.notna(row['check_out_date']) and row['check_out_date'] > row['check_in_date']:
+            # UPDATED: Use the _dt columns which contain datetime objects
+            start_date_obj = row['Start Date_dt']
+            end_date_obj = row['End Date_dt']
+
+            if pd.notna(start_date_obj) and pd.notna(end_date_obj) and end_date_obj > start_date_obj:
                 # Generate dates for each night stayed
                 # Exclude the check-out date since it's not a night stayed
-                date_range = pd.date_range(row['check_in_date'], row['check_out_date'] - pd.Timedelta(days=1), freq='D')
+                # UPDATED: Use the _dt objects
+                date_range = pd.date_range(start_date_obj, end_date_obj - pd.Timedelta(days=1), freq='D')
                 for stay_date in date_range:
                     daily_stays_list.append({'stay_date': stay_date.date()}) # Store only date part
 
