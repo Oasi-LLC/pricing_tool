@@ -99,11 +99,15 @@ def main():
     # Generate all dates in the range once
     date_range = pd.date_range(start_date, end_date, freq='D').date
 
-    for listing_name in listings_to_process:
-        # print(f"  Processing listing: {listing_name}") # Uncomment for verbose logging
-        rate_group_key = calculator._get_rate_group_for_listing(listing_name, property_config)
+    for listing_info in listings_to_process: # Iterate over listing dicts
+        listing_name = listing_info['name'] # Keep name for potential output
+        listing_id = str(listing_info['id']) # Extract the ID (as string)
+
+        # Use the ID-based lookup function
+        rate_group_key = calculator._get_rate_group_for_listing_id(listing_id, property_config)
         if not rate_group_key:
-            print(f"  Skipping listing '{listing_name}' due to missing rate group mapping.")
+            # Update warning message to use ID
+            print(f"  Skipping listing ID '{listing_id}' (Name: {listing_name}) due to missing rate group mapping.")
             continue
 
         for current_date in date_range:
@@ -134,10 +138,10 @@ def main():
                 rate_group_key=rate_group_key
             )
 
-            # Apply adjustment rules
+            # Apply adjustment rules - Pass Listing ID now
             adjusted_rate = calculator.apply_adjustment_rules(
                 current_date=current_date,
-                listing_name=listing_name,
+                listing_id=listing_id, # Pass the ID
                 occupancy_pct=occupancy_pct,
                 rate_table_df=rate_table_df,
                 date_tier_map=date_tier_map,
@@ -147,9 +151,10 @@ def main():
                 today=today
             )
 
-            # Append result
+            # Append result - Still store the Listing Name for readability
             results.append({
                 "listing": listing_name,
+                "listing_id": listing_id, # Optionally add ID to output
                 "date": date_str,
                 "occupancy_percent": round(occupancy_pct, 2),
                 "suggested_rate": round(suggested_rate) if pd.notna(suggested_rate) else None, # Round if not NaN/None

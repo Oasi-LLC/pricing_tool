@@ -2,25 +2,78 @@ properties:
   fb1: # Matches the directory name and --property argument
     name: "Firefly Boutique 1" # Optional: User-friendly name
     listings:
-      # !!! IMPORTANT: Replace these with the ACTUAL listing names for fb1 !!!
-      - "Cocoon"
-      - "Walnut House"
-      - "Spyglass"
-      - "Live Oak Lodge"
-      - "Lantana Dome"
-      - "Sage Safari"
-      - "Monarch"
-      - "Buckeye Bungalow"
-      - "Cedar Haus"
-      - "Juniper Haus"
-      - "Pecan Haus"
-      - "Bluebonnet"
+      # Maps listing names to their IDs
+      - name: "Cocoon"
+        id: "203812___362535"
+      - name: "Walnut House"
+        id: "203812___364773"
+      - name: "Spyglass"
+        id: "203812___364776"
+      - name: "Live Oak Lodge"
+        id: "203812___364778"
+      - name: "Lantana Dome"
+        id: "203812___364779"
+      - name: "Sage Safari"
+        id: "203812___364780"
+      - name: "Monarch"
+        id: "203812___364781"
+      - name: "Buckeye Bungalow"
+        id: "203812___364782"
+      - name: "Cedar Haus"
+        id: "203812___490007"
+      - name: "Juniper Haus"
+        id: "203812___490024"
+      - name: "Pecan Haus"
+        id: "203812___528745"
+      - name: "Bluebonnet"
+        id: "203812___634080"
     rate_group_mapping:
       # Maps listing groups to rate column NAMES in data/fb1/rate_table_fb1.csv
       # !!! IMPORTANT: Ensure these column names match your CSV !!!
-      rate_medium: ["Sage Safari", "Cocoon", "Buckeye Bungalow", "Lantana Dome", "Bluebonnet"]
-      rate_small: ["Monarch", "Spyglass", "Live Oak Lodge", "Walnut House"]
-      rate_large: ["Cedar Haus", "Juniper Haus", "Pecan Haus"]
+      # UPDATED: Now maps rate group keys to LISTING IDs
+      rate_1: # Sage Safari, Cocoon, Buckeye Bungalow, Lantana Dome, Bluebonnet
+        - "203812___364780"
+        - "203812___362535"
+        - "203812___364782"
+        - "203812___364779"
+        - "203812___634080"
+      rate_2: # Monarch, Spyglass, Live Oak Lodge, Walnut House
+        - "203812___364781"
+        - "203812___364776"
+        - "203812___364778"
+        - "203812___364773"
+      rate_3: # Cedar Haus, Juniper Haus, Pecan Haus
+        - "203812___490007"
+        - "203812___490024"
+        - "203812___528745"
+
+  wb1: # New property wb1
+    name: "wb1" # Using the short name as requested
+    listings:
+      - name: "Greenhouse"
+        id: "316005___633306"
+      - name: "Greenhouse ADA"
+        id: "316005___633307"
+      - name: "Spyglass"
+        id: "316005___633310"
+      - name: "Spyglass ADA"
+        id: "316005___633311"
+      - name: "Greenhouse Pet"
+        id: "316005___633308"
+      - name: "Spyglass Pet"
+        id: "316005___633312"
+    rate_group_mapping:
+      # Maps rate group keys to LISTING IDs
+      rate_1:
+        - "316005___633306"
+        - "316005___633307"
+      rate_2:
+        - "316005___633308"
+      rate_3:
+        - "316005___633310"
+        - "316005___633311"
+      rate_4:
+        - "316005___633312"
 
   # property_b: # Add other properties later following the same structure
   #   name: "Property B Name"

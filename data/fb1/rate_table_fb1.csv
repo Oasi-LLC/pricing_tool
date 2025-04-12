@@ -1,4 +1,4 @@
-tier_group,day_group,booking_window,Occupancy Band,occupancy_min_pct,occupancy_max_pct,Urgency Breakdown,Tier after movement scale,Calculated Tier,rate_medium,rate_small,rate_large
+tier_group,day_group,booking_window,Occupancy Band,occupancy_min_pct,occupancy_max_pct,Urgency Breakdown,Tier after movement scale,Calculated Tier,rate_1,rate_2,rate_3
 T1-T3,Mon-Wed,>120 Days (W7),0-20,0,20,,T1-T3,T2,$259 ,$229 ,$183 
 T1-T3,Mon-Wed,>120 Days (W7),21-30,21,30,,T4-T6,T3,$293 ,$251 ,$203 
 T1-T3,Mon-Wed,>120 Days (W7),31-50,31,50,,T4-T6,T5,$352 ,$299 ,$234 

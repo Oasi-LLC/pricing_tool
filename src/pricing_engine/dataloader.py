@@ -22,7 +22,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
         A tuple containing:
         - rate_table_df: DataFrame of the property's rate table.
         - date_tier_map: Dictionary mapping 'YYYY-MM-DD' -> tier_group string.
-        - booked_blocked_set: Set of tuples ('listing_name', 'YYYY-MM-DD')
+        - booked_blocked_set: Set of tuples ('listing_id', 'YYYY-MM-DD')
                               for dates that are booked or blocked.
         - occupancy_map: Dictionary mapping 'YYYY-MM-DD' -> occupancy percentage (0-100).
 
@@ -36,6 +36,16 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     total_listings_for_property = len(property_config.get('listings', []))
     if total_listings_for_property == 0:
         raise ValueError(f"No listings found in configuration for property '{property_name}'. Cannot calculate occupancy.")
+
+    # Create a mapping from listing ID to listing name
+    listing_id_map = {
+        str(listing['id']): listing['name']
+        for listing in property_config.get('listings', [])
+        if 'id' in listing and 'name' in listing # Basic validation
+    }
+    if not listing_id_map:
+        print(f"Warning: Could not create listing ID to name map for property '{property_name}'. Check configuration.")
+
 
     # --- Load Rate Table ---
     rate_table_path = base_path / f"rate_table_{property_name}.csv"
@@ -96,30 +106,43 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     pl_daily_path = base_path / f"pl_daily_{property_name}.csv"
     booked_blocked_set: Set[Tuple[str, str]] = set()
     try:
-        # Adjust column names to match your CSV ('Date Corrected', 'Listing', etc.)
+        # Adjust column names to match your CSV ('Date', 'Listing ID', etc.)
         pl_df = pd.read_csv(
             pl_daily_path,
-            parse_dates=['date_corrected'], # Use the actual date column name
-            usecols=['date_corrected', 'listing', 'no_booked', 'no_blocked'] # Actual names
+            parse_dates=['Date'], # Use the actual 'Date' column name from CSV
+            # Ensure 'Listing ID' column exists in your CSV and is used here
+            usecols=['Date', 'Listing ID', 'no_booked', 'no_blocked'], # Use Listing ID and Date
+            dtype={'Listing ID': str} # Ensure Listing ID is read as string
         )
 
         # Convert numeric columns, coercing errors to NaN
         pl_df['no_booked'] = pd.to_numeric(pl_df['no_booked'], errors='coerce').fillna(0)
         pl_df['no_blocked'] = pd.to_numeric(pl_df['no_blocked'], errors='coerce').fillna(0)
 
-        if not pd.api.types.is_datetime64_any_dtype(pl_df['date_corrected']):
-             raise ValueError("Could not parse 'date_corrected' column as datetime.")
+        # Use 'Date' column for validation
+        if not pd.api.types.is_datetime64_any_dtype(pl_df['Date']):
+             raise ValueError("Could not parse 'Date' column as datetime.")
 
         # Filter for relevant rows
         relevant_pl = pl_df[ (pl_df['no_booked'] > 0) | (pl_df['no_blocked'] > 0) ].copy()
 
         # Process into the set
         for _, row in relevant_pl.iterrows():
-            if pd.notna(row['date_corrected']) and pd.notna(row['listing']):
-                date_str = utils.format_date(row['date_corrected'].date())
-                listing_name = str(row['listing']).strip()
-                booked_blocked_set.add((listing_name, date_str))
-        print(f"Loaded PL Daily: {pl_daily_path}, {len(booked_blocked_set)} booked/blocked entries found.")
+            # Use 'Date' column for date processing
+            if pd.notna(row['Date']) and pd.notna(row['Listing ID']):
+                date_str = utils.format_date(row['Date'].date())
+                listing_id = str(row['Listing ID']).strip()
+                # No longer need to convert ID to Name here
+                # Directly add the ID to the set
+                booked_blocked_set.add((listing_id, date_str))
+                # Remove the old conversion and warning logic
+                # listing_name = listing_id_map.get(listing_id)
+                # if listing_name:
+                #     booked_blocked_set.add((listing_name, date_str))
+                # else:
+                #     print(f"Warning: Listing ID '{listing_id}' from {pl_daily_path} not found in properties.yaml configuration for {property_name}.")
+
+        print(f"Loaded PL Daily: {pl_daily_path}, {len(booked_blocked_set)} booked/blocked entries processed.")
     except FileNotFoundError:
         raise FileNotFoundError(f"PL Daily file not found: {pl_daily_path}")
     except KeyError as e:
@@ -129,7 +152,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
 
 
     # --- Load Resdata (for Occupancy Calculation) ---
-    resdata_path = base_path / f"resdata_{property_name}_comma.csv"
+    resdata_path = base_path / f"resdata_{property_name}.csv"
     occupancy_map: Dict[str, float] = {}
     try:
         # Adjust column names as necessary ('check_in_date', 'check_out_date')

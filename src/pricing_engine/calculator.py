@@ -7,24 +7,25 @@ from typing import Dict, Set, Tuple, Optional, Any
 # Assuming utils.py is in the same directory or Python path is set correctly
 from . import utils # Use relative import within the package
 
-def _get_rate_group_for_listing(listing_name: str, property_config: dict) -> Optional[str]:
+def _get_rate_group_for_listing_id(listing_id: str, property_config: dict) -> Optional[str]:
     """
-    Finds the rate group key (e.g., 'hard_unit', 'soft_unit') for a given listing
-    based on the property's rate_group_mapping configuration.
+    Finds the rate group key (e.g., 'rate_1', 'rate_2') for a given listing ID
+    based on the property's rate_group_mapping configuration (which maps keys to IDs).
 
     Args:
-        listing_name: The name of the listing.
+        listing_id: The ID of the listing.
         property_config: The configuration dictionary for the specific property.
 
     Returns:
         The rate group key string (which should match a column name in the
-        rate table) or None if the listing is not found in any mapping.
+        rate table) or None if the listing ID is not found in any mapping.
     """
     rate_mapping = property_config.get('rate_group_mapping', {})
-    for group_key, listings_in_group in rate_mapping.items():
-        if listing_name in listings_in_group:
-            return group_key # Returns the key like 'hard_unit'
-    print(f"Warning: Listing '{listing_name}' not found in any rate_group_mapping for property. Cannot determine rate column.")
+    for group_key, ids_in_group in rate_mapping.items():
+        if listing_id in ids_in_group: # Check if ID is in the list
+            return group_key # Returns the key like 'rate_1'
+    # Optional: Add warning if ID not found
+    # print(f"Warning: Listing ID '{listing_id}' not found in any rate_group_mapping for property. Cannot determine rate column.")
     return None
 
 def lookup_rate(
@@ -99,7 +100,7 @@ def lookup_rate(
 def get_adjusted_rate(
     ref_date: datetime.date,
     target_day_group: str, # Day group to use for lookup (e.g., 'Mon-Wed')
-    listing_name: str,
+    listing_id: str,
     multiplier: float,
     occupancy_pct: float, # Occupancy for the ORIGINAL date being priced
     rate_table_df: pd.DataFrame,
@@ -115,7 +116,7 @@ def get_adjusted_rate(
     Args:
         ref_date: The reference date (e.g., Wednesday for Thursday rule) to get the tier from.
         target_day_group: The day group to use for the lookup (typically 'Mon-Wed').
-        listing_name: The specific listing being priced.
+        listing_id: The specific listing ID.
         multiplier: The factor to multiply the looked-up rate by (e.g., 1.1, 1.2).
         occupancy_pct: The occupancy percentage for the *original* date being priced.
         rate_table_df: The rate table DataFrame.
@@ -134,9 +135,12 @@ def get_adjusted_rate(
         print(f"Warning: Tier group not found for reference date {ref_date_str} during adjustment calculation.")
         return None
 
-    rate_group_key = _get_rate_group_for_listing(listing_name, property_config)
+    # Use the ID-based lookup function
+    rate_group_key = _get_rate_group_for_listing_id(listing_id, property_config)
     if not rate_group_key:
-        return None # Warning already printed by helper function
+        # Consider adding a warning here if the ID lookup fails
+        print(f"Warning: Failed to find rate group for Listing ID '{listing_id}' during adjustment.")
+        return None
 
     # Determine if urgency applies based on the REFERENCE date's tier and window/occupancy
     # The original script logic checks urgency based on ref_date's tier/window/occ
@@ -171,11 +175,11 @@ def get_adjusted_rate(
 
 def apply_adjustment_rules(
     current_date: datetime.date,
-    listing_name: str,
+    listing_id: str, # Changed from listing_name
     occupancy_pct: float, # Occupancy for current_date
     rate_table_df: pd.DataFrame,
     date_tier_map: Dict[str, str],
-    booked_blocked_set: Set[Tuple[str, str]],
+    booked_blocked_set: Set[Tuple[str, str]], # Set now contains (ID, Date)
     booking_window_label: str, # Booking window for current_date
     property_config: dict,
     today: datetime.date # Today's date for urgency calcs
@@ -185,11 +189,11 @@ def apply_adjustment_rules(
 
     Args:
         current_date: The date for which the rate is being calculated.
-        listing_name: The specific listing.
+        listing_id: The specific listing ID. # Changed
         occupancy_pct: Occupancy percentage for current_date.
         rate_table_df: Rate table DataFrame.
         date_tier_map: Map of date strings to tiers.
-        booked_blocked_set: Set of ('listing', 'YYYY-MM-DD') for booked/blocked dates.
+        booked_blocked_set: Set of ('listing_id', 'YYYY-MM-DD') for booked/blocked dates. # Changed
         booking_window_label: Booking window label for current_date.
         property_config: Property configuration.
         today: Today's date.
@@ -204,19 +208,22 @@ def apply_adjustment_rules(
     if weekday == 3: # Thursday
         friday_date = utils.add_days(current_date, 1)
         friday_date_str = utils.format_date(friday_date)
-        is_friday_booked = (listing_name, friday_date_str) in booked_blocked_set
+        # Check booked_blocked_set using Listing ID
+        is_friday_booked = (listing_id, friday_date_str) in booked_blocked_set
 
         if is_friday_booked:
-            print(f"Applying Thursday rule for {listing_name} on {utils.format_date(current_date)} (Friday booked)")
+            # Use listing_id for logging/debugging if needed
+            print(f"Applying Thursday rule for Listing ID {listing_id} on {utils.format_date(current_date)} (Friday booked)")
             wednesday_date = utils.add_days(current_date, -1)
             wednesday_date_str = utils.format_date(wednesday_date)
-            is_wednesday_booked = (listing_name, wednesday_date_str) in booked_blocked_set
+            # Check booked_blocked_set using Listing ID
+            is_wednesday_booked = (listing_id, wednesday_date_str) in booked_blocked_set
             multiplier = 1.2 if is_wednesday_booked else 1.1
 
             adjusted_rate = get_adjusted_rate(
                 ref_date=wednesday_date, # Use Wednesday's tier
                 target_day_group='Mon-Wed', # Look up using Mon-Wed rules
-                listing_name=listing_name,
+                listing_id=listing_id, # Pass the ID
                 multiplier=multiplier,
                 occupancy_pct=occupancy_pct, # Use Thursday's occupancy
                 rate_table_df=rate_table_df,
@@ -230,17 +237,19 @@ def apply_adjustment_rules(
     elif weekday == 6: # Sunday
         saturday_date = utils.add_days(current_date, -1)
         saturday_date_str = utils.format_date(saturday_date)
-        is_saturday_booked = (listing_name, saturday_date_str) in booked_blocked_set
+        # Check booked_blocked_set using Listing ID
+        is_saturday_booked = (listing_id, saturday_date_str) in booked_blocked_set
 
         if is_saturday_booked:
-            print(f"Applying Sunday rule for {listing_name} on {utils.format_date(current_date)} (Saturday booked)")
+            # Use listing_id for logging/debugging if needed
+            print(f"Applying Sunday rule for Listing ID {listing_id} on {utils.format_date(current_date)} (Saturday booked)")
             monday_date = utils.add_days(current_date, 1)
             multiplier = 1.2
 
             adjusted_rate = get_adjusted_rate(
                 ref_date=monday_date, # Use Monday's tier
                 target_day_group='Mon-Wed', # Look up using Mon-Wed rules
-                listing_name=listing_name,
+                listing_id=listing_id, # Pass the ID
                 multiplier=multiplier,
                 occupancy_pct=occupancy_pct, # Use Sunday's occupancy
                 rate_table_df=rate_table_df,
