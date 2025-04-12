@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 import traceback
 import uuid # For generating unique IDs
-from typing import Optional # Import Optional
+from typing import Optional, Dict # Import Dict
 
 # --- Import necessary functions from the pricing engine --- 
 # Assuming PYTHONPATH is set correctly or the structure allows these imports
@@ -98,10 +98,10 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
 
         try:
             print(f"--- Loading data for {prop_name} ---")
-            rate_table_df, date_tier_map, booked_blocked_set, occupancy_map, _ = dataloader.load_and_preprocess_data(prop_name, prop_config)
+            # Load event multipliers along with other data
+            rate_table_df, date_tier_map, booked_blocked_set, occupancy_map, event_multiplier_map = dataloader.load_and_preprocess_data(prop_name, prop_config)
             print(f"--- Data loaded for {prop_name}. Calculating rates... ---")
 
-            # Generate date range for calculation
             date_range = pd.date_range(start_date, end_date, freq='D')
 
             for current_date in date_range:
@@ -110,13 +110,18 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                 day_group = utils.get_day_group(current_date_obj)
                 booking_window = utils.get_booking_window_label(current_date_obj, today, prop_config.get('booking_window_definitions', []))
                 tier_group = date_tier_map.get(current_date_str)
-                occupancy_pct = occupancy_map.get(current_date_str, 0.0) # Default to 0% if date not in map
+                occupancy_pct = occupancy_map.get(current_date_str, 0.0)
                 urgency_band = utils.get_urgency_band(current_date_obj, today, prop_config.get('urgency_band_definitions', []))
 
                 if not tier_group:
                     # st.warning(f"Tier group not found for {current_date_str} in property {prop_name}. Skipping rate calculation for this date.")
                     # Option: Create a result row indicating missing tier?
                     continue # Skip this date if no tier
+
+                # Check for event multiplier for this date
+                event_multiplier = None
+                if event_multiplier_map and current_date_str in event_multiplier_map:
+                    event_multiplier = event_multiplier_map[current_date_str]
 
                 for listing_id in listing_ids_for_property:
                     rate_group_key = calculator._get_rate_group_for_listing_id(listing_id, prop_config)
@@ -131,9 +136,11 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     occ_curr = occupancy_pct
                     occ_hist = 0.0 # Placeholder
                     pace = 0.0 # Placeholder
+                    calculated_tier = None # Initialize calculated tier
 
                     # Check adjustment rules first
-                    adjusted_rate = calculator.apply_adjustment_rules(
+                    # Now returns a tuple: (rate, tier)
+                    adjusted_rate, calculated_tier_from_adjustment = calculator.apply_adjustment_rules(
                         current_date=current_date_obj,
                         listing_id=listing_id,
                         occupancy_pct=occupancy_pct,
@@ -147,10 +154,12 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
 
                     if adjusted_rate is not None:
                         suggested_rate = adjusted_rate
-                        flag = '↕️' # Indicate adjustment rule applied
+                        flag = '↕️'
+                        # Use the tier returned by the adjustment rule logic
+                        calculated_tier = calculated_tier_from_adjustment
                     else:
-                        # If no adjustment rule applied, do standard lookup
-                        suggested_rate, error_msg = calculator.lookup_rate(
+                        # Standard lookup if no adjustment rule
+                        suggested_rate, calculated_tier, error_msg = calculator.lookup_rate(
                             rate_table_df=rate_table_df,
                             tier_group=tier_group,
                             day_group=day_group,
@@ -159,6 +168,12 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                             urgency_band=urgency_band,
                             rate_group_key=rate_group_key
                         )
+
+                    # Apply event multiplier AFTER base rate calculation (adjustment or lookup)
+                    if suggested_rate is not None and event_multiplier is not None:
+                        suggested_rate *= event_multiplier
+                        # Prepend event flag, keep existing flags if any
+                        flag = "🗓️ " + flag 
 
                     if error_msg:
                         # Decide how to handle lookup errors - skip row, default rate, specific flag?
@@ -170,8 +185,8 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     # Combine key elements for a somewhat readable ID
                     rate_id = f"rate_{prop_name}_{listing_id}_{current_date_str}_{uuid.uuid4().hex[:4]}"
 
-                    # Find listing name from config
-                    listing_name = next((item['name'] for item in prop_config.get('listings', []) if str(item.get('id')) == listing_id), listing_id) # Fallback to ID
+                    # Find listing name from config (Corrected lookup for list of dicts)
+                    listing_name = next((item.get('name', listing_id) for item in prop_config.get('listings', []) if str(item.get('id')) == listing_id), listing_id) # Fallback to ID
 
                     # TODO: Implement actual logic for Baseline, Occ% Hist, Pace, Flagging
                     # These might require more historical data loading or comparison logic
@@ -180,9 +195,10 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     all_results.append({
                         '_id': rate_id,
                         'Date': current_date_obj,
-                        'Unit Pool': listing_name, # Use name for display
+                        'Unit Pool': prop_name, # Assign prop_name (e.g., 'fb1') to Unit Pool
+                        'listing_name': listing_name, # Assign looked-up name here
                         'Suggested': suggested_rate,
-                        'Flag': flag,
+                        'Flag': flag.strip(), # Remove trailing space if only event flag
                         'Baseline': baseline,
                         'Occ% (Curr)': occ_curr,
                         'Occ% (Hist)': occ_hist,
@@ -196,7 +212,10 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                         'day_group': day_group,
                         'booking_window': booking_window,
                         'urgency_band': urgency_band,
-                        'lookup_error': error_msg
+                        'lookup_error': error_msg,
+                        'calculated_tier': calculated_tier, # Store the specific calculated tier
+                        'tier_group': tier_group, # Keep original tier_group for reference if needed
+                        'day_group': day_group,
                     })
 
         except (FileNotFoundError, KeyError, ValueError) as e:

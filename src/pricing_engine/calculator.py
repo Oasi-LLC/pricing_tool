@@ -36,7 +36,7 @@ def lookup_rate(
     occupancy_pct: float,
     urgency_band: Optional[str],
     rate_group_key: str # The key like 'rate_small' derived from listing
-) -> Tuple[Optional[float], Optional[str]]: # Return tuple: (rate, error_message)
+) -> Tuple[Optional[float], Optional[str], Optional[str]]: # Return tuple: (rate, calculated_tier, error_message)
     """
     Looks up the suggested rate in the rate table based on provided factors.
 
@@ -52,11 +52,13 @@ def lookup_rate(
     Returns:
         A tuple containing:
         - The suggested rate as a float, or None if no matching rule is found.
+        - The 'Calculated Tier' string from the matching rule, or None.
         - An error message string if lookup fails, otherwise None.
     """
+    calculated_tier = None # Initialize
     if not tier_group or not rate_group_key:
         error_msg = f"Lookup failed: Invalid input (Tier: {tier_group}, RateKey: {rate_group_key})"
-        return None, error_msg # Cannot lookup without tier or target rate column
+        return None, calculated_tier, error_msg
 
     # Ensure urgency_band is either a valid string or treated as 'match any'
     # Handle None or empty string for urgency band matching
@@ -84,28 +86,27 @@ def lookup_rate(
     matching_rows = rate_table_df[mask]
 
     if not matching_rows.empty:
-        # If multiple rules match, take the first one (or define more specific logic if needed)
+        first_match = matching_rows.iloc[0]
         try:
-            rate_value = matching_rows.iloc[0][rate_group_key]
-            # Handle potential non-numeric values read from CSV
-            rate_numeric = pd.to_numeric(rate_value, errors='coerce') # Returns NaN on conversion error
+            rate_value = first_match[rate_group_key]
+            calculated_tier = first_match.get('Calculated Tier') # Get the Calculated Tier
+            rate_numeric = pd.to_numeric(rate_value, errors='coerce')
             if pd.isna(rate_numeric):
                 error_msg = f"Lookup Error: Non-numeric rate value '{rate_value}' found for RateKey: {rate_group_key} with inputs Tier:{tier_group}, Day:{day_group}, Win:{booking_window}, Occ:{occupancy_pct:.2f}%, Urg:{urgency_band}"
-                return None, error_msg
+                return None, calculated_tier, error_msg # Return tier even if rate invalid
             else:
-                return rate_numeric, None # Success
-        except KeyError:
-            error_msg = f"Lookup Error: Rate column '{rate_group_key}' not found in rate table."
-            # print(error_msg) # Optional console print
-            return None, error_msg
+                return rate_numeric, calculated_tier, None # Success
+        except KeyError as e:
+            error_msg = f"Lookup Error: Rate column '{e}' not found in rate table."
+            calculated_tier = first_match.get('Calculated Tier') # Still try to get tier
+            return None, calculated_tier, error_msg
         except Exception as e:
             error_msg = f"Lookup Error: Unexpected error retrieving rate value: {e}"
-            # print(error_msg) # Optional console print
-            return None, error_msg
+            calculated_tier = first_match.get('Calculated Tier') # Still try to get tier
+            return None, calculated_tier, error_msg
     else:
         error_msg = f"Lookup Failed: No rule found for Tier:{tier_group}, Day:{day_group}, Win:{booking_window}, Occ:{occupancy_pct:.2f}%, Urg:{urgency_band}, RateCol:{rate_group_key}"
-        # print(error_msg) # Optional console print
-        return None, error_msg # No matching rule found
+        return None, calculated_tier, error_msg
 
 
 def get_adjusted_rate(
@@ -119,7 +120,7 @@ def get_adjusted_rate(
     booking_window_label: str, # Booking window for the ORIGINAL date
     property_config: dict,
     today: datetime.date # Today's date for potential urgency calc on ref_date
-) -> Optional[float]:
+) -> Tuple[Optional[float], Optional[str]]: # Return rate AND calculated tier
     """
     Calculates an adjusted rate based on a reference date's tier and other factors.
     Used by the Thursday/Sunday rules.
@@ -137,21 +138,22 @@ def get_adjusted_rate(
         today: Today's date for urgency band calculation based on ref_date.
 
     Returns:
-        The calculated adjusted rate, or None if lookup fails.
+        A tuple containing the calculated adjusted rate (or None) and the
+        calculated tier string from the underlying lookup (or None).
     """
     ref_date_str = utils.format_date(ref_date)
     ref_tier_group = date_tier_map.get(ref_date_str)
 
     if not ref_tier_group:
         print(f"Warning: Tier group not found for reference date {ref_date_str} during adjustment calculation.")
-        return None
+        return None, None # Return None for both rate and tier
 
     # Use the ID-based lookup function
     rate_group_key = _get_rate_group_for_listing_id(listing_id, property_config)
     if not rate_group_key:
         # Consider adding a warning here if the ID lookup fails
         print(f"Warning: Failed to find rate group for Listing ID '{listing_id}' during adjustment.")
-        return None
+        return None, None # Return None for both rate and tier
 
     # Determine if urgency applies based on the REFERENCE date's tier and window/occupancy
     # The original script logic checks urgency based on ref_date's tier/window/occ
@@ -170,7 +172,7 @@ def get_adjusted_rate(
     # IMPORTANT: get_adjusted_rate now uses lookup_rate internally.
     # We only care about the rate here, not the error message from the lookup.
     # Error handling for the base lookup should happen in the main script.
-    base_rate, _ = lookup_rate( # Unpack the tuple, ignore the error message here
+    base_rate, calculated_tier, _ = lookup_rate( # Unpack the tuple, ignore the error message here
         rate_table_df=rate_table_df,
         tier_group=ref_tier_group,
         day_group=target_day_group, # Use the specified day group ('Mon-Wed')
@@ -181,10 +183,11 @@ def get_adjusted_rate(
     )
 
     if base_rate is not None and pd.notna(base_rate): # Check if lookup succeeded and is not NaN
-        return base_rate * multiplier
+        # Return the adjusted rate AND the calculated tier from the lookup
+        return base_rate * multiplier, calculated_tier
     else:
-        # print(f"Debug: Adjusted rate lookup failed for RefDate:{ref_date_str}, Tier:{ref_tier_group}, DayGrp:{target_day_group}, Occ:{occupancy_pct:.2f}%, Urg:{ref_urgency_band}")
-        return None
+        # Return None for rate, but still return the tier if lookup_rate provided one
+        return None, calculated_tier
 
 
 def _check_condition(
@@ -214,15 +217,15 @@ def _check_condition(
 
 def apply_adjustment_rules(
     current_date: datetime.date,
-    listing_id: str, # Changed from listing_name
+    listing_id: str,
     occupancy_pct: float, # Occupancy for current_date
     rate_table_df: pd.DataFrame,
     date_tier_map: Dict[str, str],
-    booked_blocked_set: Set[Tuple[str, str]], # Set now contains (ID, Date)
+    booked_blocked_set: Set[Tuple[str, str]],
     booking_window_label: str, # Booking window for current_date
     property_config: dict,
     today: datetime.date # Today's date for urgency calcs
-) -> Optional[float]:
+) -> Tuple[Optional[float], Optional[str]]: # Return rate AND calculated tier
     """
     Checks and applies adjustment rules defined in the property configuration.
 
@@ -238,67 +241,64 @@ def apply_adjustment_rules(
         today: Today's date.
 
     Returns:
-        The adjusted rate if a rule applies and calculation succeeds, otherwise None.
+        A tuple containing the adjusted rate (or None) and the associated
+        calculated tier string (or None).
     """
     rules = property_config.get('adjustment_rules', [])
     if not rules:
-        return None # No rules defined for this property
+        return None, None # No rules defined
 
-    current_weekday = current_date.weekday() # Monday = 0, Sunday = 6
+    current_weekday = current_date.weekday()
 
     for rule in rules:
         if rule.get('target_weekday') == current_weekday:
-            # Check primary conditions for the rule
             all_conditions_met = True
             for condition_config in rule.get('conditions', []):
                 if not _check_condition(condition_config, current_date, listing_id, booked_blocked_set):
                     all_conditions_met = False
-                    break # Stop checking conditions for this rule
+                    break
 
             if all_conditions_met:
-                # Find the first matching action (checking nested conditions)
                 selected_action = None
                 for action in rule.get('actions', []):
                     nested_condition_config = action.get('condition')
-                    # Check nested condition OR if it's the default action (condition: null)
                     if _check_condition(nested_condition_config, current_date, listing_id, booked_blocked_set):
                         selected_action = action
-                        break # Use the first matching action
+                        break
 
                 if selected_action:
                     print(f"Applying rule '{rule.get('name', 'Unnamed Rule')}' for Listing ID {listing_id} on {utils.format_date(current_date)}")
-
-                    # Extract parameters for get_adjusted_rate
                     multiplier = selected_action.get('multiplier')
                     ref_day_offset = selected_action.get('reference_day_offset')
                     lookup_day_group = selected_action.get('lookup_day_group')
 
-                    # Validate required parameters
                     if multiplier is None or ref_day_offset is None or lookup_day_group is None:
-                        print(f"Warning: Rule '{rule.get('name', 'Unnamed Rule')}' action is missing required parameters (multiplier, reference_day_offset, lookup_day_group). Skipping.")
-                        continue # Skip to next rule if config is invalid
+                        print(f"Warning: Rule '{rule.get('name', 'Unnamed Rule')}' action is missing required parameters. Skipping.")
+                        continue
 
                     ref_date = utils.add_days(current_date, ref_day_offset)
 
-                    adjusted_rate = get_adjusted_rate(
+                    # Get both adjusted rate and the tier from the underlying lookup
+                    adjusted_rate, calculated_tier = get_adjusted_rate(
                         ref_date=ref_date,
-                        target_day_group=lookup_day_group, # Use group from config
+                        target_day_group=lookup_day_group,
                         listing_id=listing_id,
                         multiplier=multiplier,
-                        occupancy_pct=occupancy_pct, # Use current date's occupancy
+                        occupancy_pct=occupancy_pct,
                         rate_table_df=rate_table_df,
                         date_tier_map=date_tier_map,
-                        booking_window_label=booking_window_label, # Use current date's window
-                        property_config=property_config, # Pass config down for rate group mapping
+                        booking_window_label=booking_window_label,
+                        property_config=property_config,
                         today=today
                     )
 
-                    # If adjustment calculation succeeded, return it immediately
+                    # If adjustment succeeded, return rate AND the determined tier
                     if adjusted_rate is not None:
-                        return adjusted_rate
+                        return adjusted_rate, calculated_tier
+                    # If adjustment failed, we might still have a tier from lookup, but rate is None
+                    # We implicitly continue to the next rule or fall through
                 else:
                      print(f"Warning: Rule '{rule.get('name', 'Unnamed Rule')}' triggered, but no valid action found for Listing ID {listing_id} on {utils.format_date(current_date)}")
 
-
-    # If no rules matched or calculation failed, return None
-    return None
+    # If no rules applied or succeeded, return None for both
+    return None, None
