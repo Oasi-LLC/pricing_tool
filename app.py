@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 import traceback # Import traceback for more detailed error logging if needed
 import numpy as np # Import numpy for calculations
+from pathlib import Path # Add Path import
 
 # Import backend interface functions
 from utils import backend_interface
@@ -19,11 +20,12 @@ COL_SELECT = "Select"
 COL_VIEW_DETAILS = "View Details"
 COL_DATE = "Date"
 COL_PROPERTY = "Property"
-COL_LISTING_ID = "Listing ID"
+COL_LISTING_ID = "listing_id" # Changed to match source df column name
 COL_LISTING_NAME = "Listing Name"
 COL_TIER = "Tier"
 COL_DAY_OF_WEEK = "Day of Week"
-COL_LIVE_RATE = "Live Rate"
+# COL_LIVE_RATE = "Live Rate" # Revert back to the correct name with $
+COL_LIVE_RATE = "Live Rate $"
 COL_SUGGESTED = "Suggested Rate"
 COL_DELTA = "Delta"
 COL_EDITABLE_PRICE = "Editable Rate"
@@ -34,15 +36,15 @@ COL_PACE = "Pace"
 COL_STATUS = "Status"
 COL_ID = "_id"
 # Original source names if different from display
-COL_BASELINE_SRC = "Baseline"
+COL_BASELINE_SRC = "Baseline" # Keep for potential reference but remove usage for Live Rate
 COL_SUGGESTED_SRC = "Suggested"
 COL_EDITABLE_PRICE_SRC = "Editable Price"
 COL_PROPERTY_SRC = "property"
 COL_TIER_SRC = "tier_group"
 COL_CALCULATED_TIER_SRC = "calculated_tier"
 
-# Hidden source/technical columns
-HIDDEN_COLS = [COL_ID, "listing_id", COL_TIER_SRC, "day_group", "booking_window", "urgency_band", "lookup_error"]
+# Hidden source/technical columns - NOTE: Ensure listing_id matches COL_LISTING_ID if changed
+HIDDEN_COLS = [COL_ID, COL_LISTING_ID, COL_TIER_SRC, "day_group", "booking_window", "urgency_band", "lookup_error"]
 # Core visible columns (always shown) - Updated Order & Names
 CORE_COLS = [
     COL_SELECT, COL_VIEW_DETAILS, COL_DATE, COL_PROPERTY, COL_TIER, COL_DAY_OF_WEEK, COL_OCC_CURR,
@@ -199,64 +201,118 @@ with results_area:
                     start_date=st.session_state.start_date,
                     end_date=st.session_state.end_date
                 )
-                
-                # Store results in session state
-                st.session_state.generated_rates_df = generated_df 
-                st.session_state.edited_rates_df = generated_df.copy() if generated_df is not None else None # Initialize edited state
-                
-                if generated_df is not None:
-                    if not generated_df.empty:
-                        st.session_state.focus_date = pd.to_datetime(generated_df['Date']).min().date()
-                    else:
-                        st.session_state.focus_date = st.session_state.start_date # Fallback if empty df
-                    st.toast("Rate generation complete!", icon="✅")
-                else:
-                    st.error("Rate generation failed or produced no results. Check logs.")
+
+            # Store results in session state
+            st.session_state.generated_rates_df = generated_df 
+            # st.session_state.edited_rates_df = generated_df.copy() if generated_df is not None else None # Defer copy until after merge
             
+            if generated_df is not None and not generated_df.empty:
+                # --- Add Live Rate Data Merge --- Start
+                merged_df = None
+                all_live_rates_dfs = []
+                properties_in_data = generated_df[COL_PROPERTY_SRC].unique()
+                
+                for prop_name in properties_in_data:
+                    live_rates_filename = f"{prop_name}_nightly_pulled_overrides.csv"
+                    live_rates_path = Path("data") / prop_name / live_rates_filename
+                    if live_rates_path.exists():
+                        try:
+                            live_df = pd.read_csv(
+                                live_rates_path,
+                                usecols=['listing_id', 'date', 'price'],
+                                dtype={'listing_id': str, 'date': str, 'price': float}
+                            )
+                            # Ensure date format consistency (YYYY-MM-DD string)
+                            live_df['date'] = pd.to_datetime(live_df['date']).dt.strftime('%Y-%m-%d')
+                            all_live_rates_dfs.append(live_df)
+                            # st.write(f"DEBUG: Loaded {len(live_df)} live rates for {prop_name}") # Debug
+                        except Exception as e:
+                            st.warning(f"Could not load or process live rates file for {prop_name}: {e}")
+                    else:
+                        st.warning(f"Live rates file not found for {prop_name}: {live_rates_path}")
+                        
+                if all_live_rates_dfs:
+                    combined_live_rates_df = pd.concat(all_live_rates_dfs, ignore_index=True)
+                    # Prepare generated_df date column (assuming it's called COL_DATE)
+                    # Check if generated_df already has dates as strings
+                    if not pd.api.types.is_string_dtype(generated_df[COL_DATE]):
+                        generated_df[COL_DATE] = pd.to_datetime(generated_df[COL_DATE]).dt.strftime('%Y-%m-%d')
+                    
+                    # Perform the merge
+                    merged_df = pd.merge(
+                        generated_df,
+                        combined_live_rates_df,
+                        left_on=[COL_LISTING_ID, COL_DATE], # Use the correct constant for listing_id
+                        right_on=['listing_id', 'date'],
+                        how='left',
+                        suffixes=('', '_live') # Add suffix to avoid potential conflicts
+                    )
+                    
+                    # Rename the merged price column to our target name
+                    merged_df.rename(columns={'price': COL_LIVE_RATE}, inplace=True)
+                    # Ensure the column exists, filling missing with NaN or 0.0? Let's use NaN then fill with 0
+                    if COL_LIVE_RATE not in merged_df.columns:
+                         merged_df[COL_LIVE_RATE] = 0.0 # Ensure column exists
+                    else:
+                         # Ensure numeric and fill missing values with 0
+                         merged_df[COL_LIVE_RATE] = pd.to_numeric(merged_df[COL_LIVE_RATE], errors='coerce').fillna(0.0)
+                    # st.write("DEBUG: Columns after merge:", merged_df.columns.tolist()) # Debug
+                else:
+                    st.warning("No live rate data loaded. 'Live Rate $' column will be set to $0.00.")
+                    merged_df = generated_df.copy()
+                    merged_df[COL_LIVE_RATE] = 0.0 # Ensure column exists with 0
+                
+                st.session_state.edited_rates_df = merged_df.copy() # Now initialize edited state
+                # --- Add Live Rate Data Merge --- End
+                
+                # Set focus date only if data loaded successfully
+                st.session_state.focus_date = pd.to_datetime(generated_df[COL_DATE]).min().date()
+                st.session_state.results_are_displayed = True # Data loaded/merged, mark results as displayed
+
+            elif st.session_state.generate_clicked: # Handle case where backend returned None or empty
+                 st.error("Failed to generate rates or no data found for the selected parameters.")
+                 st.session_state.edited_rates_df = None # Clear any old data
+                 st.session_state.results_are_displayed = False
+
         except Exception as e:
-            st.error("An unexpected error occurred during rate generation process.")
-            st.exception(e) # Show detailed exception info in the UI for debugging
-            st.session_state.generated_rates_df = None
+            st.error(f"An error occurred during rate generation: {e}")
+            st.exception(e) # Show detailed traceback in app
             st.session_state.edited_rates_df = None
-        finally:
-             st.session_state.generate_clicked = False # Always reset flag after attempt
+            st.session_state.results_are_displayed = False
+            st.session_state.generate_clicked = False # Reset flag on error
 
-    # Display results if available
-    if st.session_state.edited_rates_df is not None:
-        # Use a flag in the main session state to track if results area is active
-        if not st.session_state.results_are_displayed:
-             st.subheader("2. Review & Manage Rates") # Ensure subheader is shown if data loaded
-             st.session_state.results_are_displayed = True # Set the flag in the main session state
-
-        current_display_df = st.session_state.edited_rates_df
+    # --- Display Area (only show if results are ready) ---
+    if st.session_state.results_are_displayed and st.session_state.edited_rates_df is not None:
         
-        # --- Calculate derived columns for display (do this every time data is shown) --- 
-        if COL_DATE in current_display_df.columns:
-            try:
-                # Ensure Date is datetime
-                date_col = pd.to_datetime(current_display_df[COL_DATE])
-                # Day of Week (Use %A for full name)
-                current_display_df[COL_DAY_OF_WEEK] = date_col.dt.strftime('%A')
-            except Exception as e:
-                st.error(f"Error calculating Day of Week: {e}")
-                # Assign a default or leave column out if calculation fails?
-                if COL_DAY_OF_WEEK not in current_display_df.columns:
-                     current_display_df[COL_DAY_OF_WEEK] = "Error"
+        # Prepare dataframe for display (copy to avoid modifying session state directly)
+        current_display_df = st.session_state.edited_rates_df.copy()
+        
+        # --- Calculate derived columns for display --- 
+        # Day of Week
+        try:
+            # Ensure date column is datetime-like for weekday calculation
+            date_col_dt = pd.to_datetime(current_display_df[COL_DATE], errors='coerce')
+            # Use .dt accessor for weekday name
+            current_display_df[COL_DAY_OF_WEEK] = date_col_dt.dt.strftime('%A') 
+        except Exception as e:
+            st.warning(f"Could not calculate Day of Week: {e}")
+            current_display_df[COL_DAY_OF_WEEK] = "Error"
 
-        # --- Delta calculation (Uncommented) ---
-        if COL_BASELINE_SRC in current_display_df.columns and COL_SUGGESTED_SRC in current_display_df.columns:
-            live_rate = pd.to_numeric(current_display_df[COL_BASELINE_SRC], errors='coerce')
+        # --- Delta calculation (Now use COL_LIVE_RATE) ---
+        if COL_LIVE_RATE in current_display_df.columns and COL_SUGGESTED_SRC in current_display_df.columns:
+            live_rate = pd.to_numeric(current_display_df[COL_LIVE_RATE], errors='coerce').fillna(0.0) # Fillna with 0
             suggested = pd.to_numeric(current_display_df[COL_SUGGESTED_SRC], errors='coerce')
-            delta_pct = np.where(
-                (live_rate.isna() | suggested.isna() | (live_rate == 0)), 
-                np.nan, # Assign NaN if inputs invalid or live_rate is 0
-                (suggested - live_rate) / live_rate * 100
+            
+            # Calculate delta where live_rate is not zero
+            delta = np.where(
+                live_rate != 0, 
+                ((suggested - live_rate) / live_rate) * 100, 
+                np.nan # Or perhaps 0 or a specific string like 'N/A' if live rate is 0?
             )
-            current_display_df[COL_DELTA] = delta_pct
+            current_display_df[COL_DELTA] = delta
         else:
-             if COL_DELTA not in current_display_df.columns:
-                   current_display_df[COL_DELTA] = np.nan # Ensure column exists even if calculation fails
-        # --- End derived column calculation --- 
+            current_display_df[COL_DELTA] = np.nan # Ensure column exists if calculation fails
+
 
         # --- Calendar View --- (FR8, FR9)
         calendar_container = st.container()
@@ -288,7 +344,7 @@ with results_area:
             if st.session_state.selected_rate_id:
                 st.markdown("#### Focus Detail")
                 # Find the row in the *current* display dataframe
-                selected_row_data = current_display_df[current_display_df['_id'] == st.session_state.selected_rate_id]
+                selected_row_data = current_display_df[current_display_df[COL_ID] == st.session_state.selected_rate_id]
                 if not selected_row_data.empty:
                     # Pass the actual data Series to the backend function
                     details = backend_interface.get_rate_details(selected_row_data.iloc[0])
@@ -296,7 +352,9 @@ with results_area:
                     det_col1, det_col2, det_col3 = st.columns(3)
                     with det_col1:
                         st.metric("Suggested Rate", f"${details['Suggested Price']:.2f}")
-                        st.metric("Live Rate", f"${details[COL_BASELINE_SRC]:.2f}")
+                        # st.metric("Live Rate", f"${details[COL_BASELINE_SRC]:.2f}") # Revert baseline usage
+                        live_rate_val = details.get(COL_LIVE_RATE, 0.0) # Safely get value, default to 0.0
+                        st.metric("Live Rate", f"${live_rate_val:.2f}") # Use the correct merged column
                     with det_col2:
                         st.metric("Current Live Rate", f"${details['Current Live Rate']:.2f}")
                         st.metric("Historical Pace", f"{details['Historical Pace']:.1f}")
@@ -316,7 +374,7 @@ with results_area:
         grid_container = st.container()
         with grid_container:
             # Use the dataframe from session state which now includes derived columns
-            df_for_editor = st.session_state.edited_rates_df.copy()
+            df_for_editor = current_display_df # Use the df with derived columns
             
             # Ensure Select/View Details columns exist (should already be there)
             if COL_SELECT not in df_for_editor.columns: df_for_editor.insert(0, COL_SELECT, False)
@@ -325,7 +383,7 @@ with results_area:
             st.markdown("#### Rate Review Grid")
             # st.dataframe(df_for_editor.head()) # Debug: Check columns before editor
             # --- Add Debug Info --- Start
-            st.write("DEBUG: Columns in DataFrame passed to editor:", df_for_editor.columns.tolist())
+            # st.write("DEBUG: Columns in DataFrame passed to editor:", df_for_editor.columns.tolist())
             # --- Add Debug Info --- End
             prev_selected_id = st.session_state.selected_rate_id
             
@@ -341,7 +399,7 @@ with results_area:
                 COL_PROPERTY: COL_PROPERTY_SRC,
                 COL_LISTING_NAME: "listing_name",
                 COL_TIER: COL_CALCULATED_TIER_SRC,
-                COL_LIVE_RATE: COL_BASELINE_SRC,
+                # COL_LIVE_RATE: COL_BASELINE_SRC, # Remove this mapping
                 COL_SUGGESTED: COL_SUGGESTED_SRC,
                 COL_EDITABLE_PRICE: COL_EDITABLE_PRICE_SRC
             }
@@ -350,12 +408,11 @@ with results_area:
                 actual_col = source_col_map.get(col_concept, col_concept)
                 if actual_col in df_for_editor.columns:
                     display_order_actual_cols.append(actual_col)
-                elif col_concept == actual_col and col_concept in df_for_editor.columns:
-                    display_order_actual_cols.append(col_concept)
+                # No need for elif, if concept == actual_col it's handled above
             
             # st.write("Actual Columns for Display Order:", display_order_actual_cols) # Debug
             # --- Add Debug Info --- Start
-            st.write("DEBUG: Actual column names in display order:", display_order_actual_cols)
+            # st.write("DEBUG: Actual column names in display order:", display_order_actual_cols)
             # --- Add Debug Info --- End
 
             full_column_config = {
@@ -367,7 +424,8 @@ with results_area:
                 "listing_name": st.column_config.TextColumn(COL_LISTING_NAME),
                 COL_CALCULATED_TIER_SRC: st.column_config.TextColumn("Tier"),
                 COL_DAY_OF_WEEK: st.column_config.TextColumn("Day"), 
-                COL_BASELINE_SRC: st.column_config.NumberColumn("Live Rate $", format="$%.2f", help="Current live rate (Placeholder)"),
+                # COL_BASELINE_SRC: st.column_config.NumberColumn(COL_LIVE_RATE, format="$%.2f", help="Current live rate (using Baseline source)"), # Remove baseline config
+                COL_LIVE_RATE: st.column_config.NumberColumn(COL_LIVE_RATE, format="$%.2f", help="Current live rate from nightly pull"), # Correct config key and label
                 COL_SUGGESTED_SRC: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f", help="Price suggested by the engine"),
                 COL_DELTA: st.column_config.NumberColumn("Delta %", format="%.1f%%", help="%(Suggested - Live) / Live"),
                 COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0),
@@ -376,24 +434,35 @@ with results_area:
                 COL_OCC_HIST: st.column_config.NumberColumn("Occ% Historical", format="%.1f%%"),
                 COL_PACE: st.column_config.NumberColumn("Pace Score", format="%.1f"),
                 COL_STATUS: st.column_config.TextColumn("Status"),
-                "day_group": None,
-                "booking_window": None,
-                "urgency_band": None,
-                "lookup_error": None
+                # "day_group": None, # Keep technical columns hidden
+                # "booking_window": None,
+                # "urgency_band": None,
+                # "lookup_error": None
+                # Explicitly add technical columns needed for backend but hidden from editor
+                COL_LISTING_ID: None,
+                COL_TIER_SRC: None,
             }
+            # Add any other technical columns that should NOT be displayed but ARE needed by backend
+            for col in HIDDEN_COLS:
+                 if col not in full_column_config:
+                      full_column_config[col] = None
             
             active_column_config = {k: v for k, v in full_column_config.items() 
                                   if k in display_order_actual_cols or (k in full_column_config and full_column_config[k] is None)}
             # st.write("Active Config Keys:", list(active_column_config.keys())) # Debug
             # --- Add Debug Info --- Start
-            st.write("DEBUG: Active config keys passed to editor:", list(active_column_config.keys()))
+            # st.write("DEBUG: Active config keys passed to editor:", list(active_column_config.keys()))
             # --- Add Debug Info --- End
             
             # Define columns that should always be disabled from editing (using actual source names)
-            disabled_cols = [COL_DATE, COL_PROPERTY_SRC, "listing_name", COL_CALCULATED_TIER_SRC, COL_DAY_OF_WEEK, COL_BASELINE_SRC, COL_SUGGESTED_SRC, COL_DELTA,
+            disabled_cols = [COL_DATE, COL_PROPERTY_SRC, "listing_name", COL_CALCULATED_TIER_SRC, COL_DAY_OF_WEEK, 
+                             # COL_BASELINE_SRC, # Remove baseline source
+                             COL_LIVE_RATE, # Disable the correct merged column
+                             COL_SUGGESTED_SRC, COL_DELTA,
                              COL_FLAG, COL_OCC_CURR, COL_OCC_HIST, COL_PACE, COL_STATUS] + HIDDEN_COLS
             if COL_OCC_HIST not in st.session_state.optional_columns and COL_OCC_HIST in disabled_cols: disabled_cols.remove(COL_OCC_HIST)
             if COL_PACE not in st.session_state.optional_columns and COL_PACE in disabled_cols: disabled_cols.remove(COL_PACE)
+            # Filter disabled_cols to only include those actually present in the editor's dataframe
             disabled_cols = [col for col in disabled_cols if col in df_for_editor.columns] 
 
             # Use source dataframe for editor, but control display/order/config

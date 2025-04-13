@@ -85,6 +85,28 @@ def main():
     except Exception as e:
         print(f"An unexpected error occurred during data loading: {e}")
         sys.exit(1)
+        
+    # --- Load Live Rates (Pulled Overrides) ---
+    live_rate_map = {}
+    try:
+        # live_rates_path = Path("data") / property_to_run / "pulled_overrides.csv" # Old filename
+        live_rates_filename = f"{property_to_run}_nightly_pulled_overrides.csv" # New dynamic filename
+        live_rates_path = Path("data") / property_to_run / live_rates_filename # Construct full path
+        if live_rates_path.exists():
+            live_rates_df = pd.read_csv(
+                live_rates_path, 
+                usecols=['listing_id', 'date', 'price'],
+                dtype={'listing_id': str, 'date': str, 'price': float} # Read price as float directly
+            )
+            # Create mapping key: listing_id_date -> price
+            for _, row in live_rates_df.iterrows():
+                map_key = f"{row['listing_id']}_{row['date']}"
+                live_rate_map[map_key] = row['price']
+            print(f"Loaded {len(live_rate_map)} live rates from {live_rates_path}")
+        else:
+            print(f"Warning: Live rates file not found at {live_rates_path}. 'Live Rate $' column will be empty.")
+    except Exception as e:
+        print(f"Warning: Error loading live rates from {live_rates_path}: {e}. 'Live Rate $' column will be empty.")
 
 
     # --- Generate Rates ---
@@ -199,11 +221,17 @@ def main():
             if adjustment_applied and pd.notna(final_rate):
                  output_adjusted_rate = round(final_rate)
 
+            # Look up live rate
+            map_key = f"{listing_id}_{date_str}"
+            live_rate = live_rate_map.get(map_key)
+            output_live_rate = round(live_rate) if pd.notna(live_rate) else None # Round if found, else None
+
             # Append result - including error details
             results.append({
                 "listing": listing_name,
                 "listing_id": listing_id,
                 "date": date_str,
+                "Live Rate $": output_live_rate, # Add the live rate
                 "occupancy_percent": round(occupancy_pct, 2),
                 "suggested_rate": output_suggested_rate, # Base rate or Error string
                 "adjusted_rate": output_adjusted_rate, # Final rate ONLY if adjustment occurred
@@ -229,6 +257,7 @@ def main():
         # Convert rate columns - handle potential string errors in suggested_rate
         # We keep suggested_rate as object/string due to potential error message
         # output_df['suggested_rate'] = output_df['suggested_rate'].astype('Int64')
+        output_df['Live Rate $'] = output_df['Live Rate $'].astype('Int64')
         output_df['adjusted_rate'] = output_df['adjusted_rate'].astype('Int64')
         output_df['error_details'] = output_df['error_details'].astype(str).fillna('') # Ensure string, fill NaN
 

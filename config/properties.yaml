@@ -2,6 +2,7 @@ properties:
   fb1: # Matches the directory name and --property argument
     # Documentation: Defines configuration for the 'fb1' property.
     name: "Firefly Boutique 1" # User-friendly name
+    pms: cloudbeds
     listings:
       # Maps user-friendly listing names to their unique IDs used in data files.
       # Ensure these IDs match those in pl_daily_*.csv etc.
@@ -72,6 +73,7 @@ properties:
   wb1: # Property wb1
     # Documentation: Defines configuration for the 'wb1' property.
     name: "wb1"
+    pms: cloudbeds
     listings:
       - {name: "Greenhouse", id: "316005___633306"}
       - {name: "Greenhouse ADA", id: "316005___633307"}
