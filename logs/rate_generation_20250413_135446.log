@@ -1,0 +1,46 @@
+2025-04-13 13:54:46,002 - INFO - Starting rate generation run. Log file: logs/rate_generation_20250413_135446.log
+2025-04-13 13:54:46,003 - INFO - Properties selected: ['fb1']
+2025-04-13 13:54:46,003 - INFO - Date range: 2025-04-13 to 2025-05-13
+2025-04-13 13:54:46,003 - INFO - Reference date (today): 2025-04-13
+2025-04-13 13:54:46,003 - INFO - Processing property: fb1
+2025-04-13 13:54:46,003 - INFO - --- Loading data for fb1 ---
+2025-04-13 13:54:46,971 - INFO - --- Data loaded for fb1. Calculating rates... ---
+2025-04-13 13:54:46,976 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364773 Date:2025-04-14 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:83.33%, Urg:0-1, RateCol:rate_2
+2025-04-13 13:54:46,977 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364778 Date:2025-04-14 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:83.33%, Urg:0-1, RateCol:rate_2
+2025-04-13 13:54:46,977 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364773 Date:2025-04-15 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:83.33%, Urg:2-3, RateCol:rate_2
+2025-04-13 13:54:46,978 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___490007 Date:2025-04-15 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:83.33%, Urg:2-3, RateCol:rate_3
+2025-04-13 13:54:46,978 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364773 Date:2025-04-16 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:66.67%, Urg:2-3, RateCol:rate_2
+2025-04-13 13:54:46,979 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364780 Date:2025-04-16 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:66.67%, Urg:2-3, RateCol:rate_1
+2025-04-13 13:54:46,979 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364782 Date:2025-04-16 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:66.67%, Urg:2-3, RateCol:rate_1
+2025-04-13 13:54:46,980 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___490007 Date:2025-04-16 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:66.67%, Urg:2-3, RateCol:rate_3
+2025-04-13 13:54:46,980 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364780 Date:2025-04-17 - Lookup Failed: No rule found for Tier:T1-T3, Day:Thu-Sun, Win:0-9 Days (W1), Occ:58.33%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,982 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___634080 Date:2025-04-17 - Lookup Failed: No rule found for Tier:T1-T3, Day:Thu-Sun, Win:0-9 Days (W1), Occ:58.33%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,982 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___362535 Date:2025-04-18 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:66.67%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,983 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364780 Date:2025-04-18 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:66.67%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,983 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364781 Date:2025-04-18 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:66.67%, Urg:4-6, RateCol:rate_2
+2025-04-13 13:54:46,983 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___634080 Date:2025-04-18 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:66.67%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,984 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___362535 Date:2025-04-19 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:50.00%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,984 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364779 Date:2025-04-19 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:50.00%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,985 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364780 Date:2025-04-19 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:50.00%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,985 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364781 Date:2025-04-19 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:50.00%, Urg:4-6, RateCol:rate_2
+2025-04-13 13:54:46,985 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364782 Date:2025-04-19 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:50.00%, Urg:4-6, RateCol:rate_1
+2025-04-13 13:54:46,986 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___490007 Date:2025-04-19 - Lookup Failed: No rule found for Tier:T10-T12, Day:Fri-Sat, Win:0-9 Days (W1), Occ:50.00%, Urg:4-6, RateCol:rate_3
+2025-04-13 13:54:46,987 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___362535 Date:2025-04-20 - Lookup Failed: No rule found for Tier:T1-T3, Day:Thu-Sun, Win:0-9 Days (W1), Occ:50.00%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,989 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364779 Date:2025-04-20 - Lookup Failed: No rule found for Tier:T1-T3, Day:Thu-Sun, Win:0-9 Days (W1), Occ:50.00%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,989 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364780 Date:2025-04-20 - Lookup Failed: No rule found for Tier:T1-T3, Day:Thu-Sun, Win:0-9 Days (W1), Occ:50.00%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,990 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___362535 Date:2025-04-21 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:41.67%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,991 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364773 Date:2025-04-21 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:41.67%, Urg:7-9, RateCol:rate_2
+2025-04-13 13:54:46,991 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364779 Date:2025-04-21 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:41.67%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,991 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364780 Date:2025-04-21 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:41.67%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,992 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___490024 Date:2025-04-21 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:41.67%, Urg:7-9, RateCol:rate_3
+2025-04-13 13:54:46,992 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___528745 Date:2025-04-21 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:41.67%, Urg:7-9, RateCol:rate_3
+2025-04-13 13:54:46,993 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___634080 Date:2025-04-21 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:41.67%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,993 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___362535 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,994 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364773 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_2
+2025-04-13 13:54:46,994 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364780 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,994 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___364782 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:46,995 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___490007 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_3
+2025-04-13 13:54:46,995 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___490024 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_3
+2025-04-13 13:54:46,996 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___528745 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_3
+2025-04-13 13:54:46,996 - WARNING - Rate lookup error for Prop:fb1 Listing:203812___634080 Date:2025-04-22 - Lookup Failed: No rule found for Tier:T4-T6, Day:Mon-Wed, Win:0-9 Days (W1), Occ:33.33%, Urg:7-9, RateCol:rate_1
+2025-04-13 13:54:47,075 - INFO - --- Rate calculation complete. 372 total rate entries generated. ---

@@ -6,6 +6,7 @@ from pathlib import Path
 import traceback
 import uuid # For generating unique IDs
 from typing import Optional, Dict # Import Dict
+import logging # <-- Add logging import
 
 # --- Import necessary functions from the pricing engine --- 
 # Assuming PYTHONPATH is set correctly or the structure allows these imports
@@ -14,6 +15,8 @@ from src.pricing_engine import dataloader, calculator, utils
 
 CONFIG_PATH = Path("config/properties.yaml")
 OUTPUT_DIR = Path("data/outputs")
+LOG_DIR = Path("logs") # <-- Define log directory
+LOG_DIR.mkdir(parents=True, exist_ok=True) # <-- Ensure log directory exists
 
 # --- Cached Functions --- 
 
@@ -54,7 +57,7 @@ def get_rate_details(rate_data_row: pd.Series) -> dict:
     # This function now expects the actual data row (Pandas Series) as input
     # Modification in app.py needed: Pass the row instead of just the ID.
     if rate_data_row is None or rate_data_row.empty:
-        return {'Unit Pool': 'Unknown', 'Date': datetime.date.today(), 'Suggested Price': 0.0, 'Current Live Rate': 0.0, 'Baseline': 0.0, 'Flag Reason': '', 'Occupancy %': {'Current': 0.0, 'Historical': 0.0}, 'Historical Pace': 0.0}
+        return {'Unit Pool': 'Unknown', 'Date': datetime.date.today(), 'Suggested Price': 0.0, 'Current Live Rate': 0.0, 'Baseline': 0.0, 'Flag Reason': '', 'Occupancy %': {'Current': 0.0, 'Historical': 0.0}, 'Historical Pace': 0.0, 'lookup_error': ''}
 
     # Extract details - use .get() for robustness against missing columns
     details = {
@@ -68,7 +71,8 @@ def get_rate_details(rate_data_row: pd.Series) -> dict:
             'Current': float(rate_data_row.get('Occ% (Curr)', 0.0)) if pd.notna(rate_data_row.get('Occ% (Curr)')) else 0.0,
             'Historical': float(rate_data_row.get('Occ% (Hist)', 0.0)) if pd.notna(rate_data_row.get('Occ% (Hist)')) else 0.0
         },
-        'Historical Pace': float(rate_data_row.get('Pace', 0.0)) if pd.notna(rate_data_row.get('Pace')) else 0.0
+        'Historical Pace': float(rate_data_row.get('Pace', 0.0)) if pd.notna(rate_data_row.get('Pace')) else 0.0,
+        'lookup_error': rate_data_row.get('lookup_error', '') # Add the lookup error message
     }
     return details
 
@@ -77,16 +81,41 @@ def get_rate_details(rate_data_row: pd.Series) -> dict:
 
 def trigger_rate_generation(property_selection: list, start_date: datetime.date, end_date: datetime.date) -> Optional[pd.DataFrame]:
     """Orchestrates loading data and calculating rates for selected properties/dates."""
+
+    # --- Setup Logging for this run ---
+    run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = LOG_DIR / f"rate_generation_{run_timestamp}.log"
+    # Configure logging (basic setup, customize format/level as needed)
+    # Remove existing handlers to avoid duplicate logs if function is called multiple times
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_filename),
+            # logging.StreamHandler() # Optionally add stream handler for console output too
+        ]
+    )
+    logging.info(f"Starting rate generation run. Log file: {log_filename}")
+    logging.info(f"Properties selected: {property_selection}")
+    logging.info(f"Date range: {start_date} to {end_date}")
+    # --- End Logging Setup ---
+
     all_properties_config = load_properties_config()
     if not all_properties_config:
+        logging.error("Failed to load properties configuration.") # <-- Log error
         return None
 
     all_results = []
     today = datetime.date.today()
+    logging.info(f"Reference date (today): {today}") # <-- Log info
 
     for prop_name in property_selection:
+        logging.info(f"Processing property: {prop_name}") # <-- Log info
         if prop_name not in all_properties_config:
             st.warning(f"Configuration not found for property: {prop_name}. Skipping.")
+            logging.warning(f"Configuration not found for property: {prop_name}. Skipping.") # <-- Log warning
             continue
 
         prop_config = all_properties_config[prop_name]
@@ -94,13 +123,14 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
 
         if not listing_ids_for_property:
             st.warning(f"No listing IDs found in config for property: {prop_name}. Skipping.")
+            logging.warning(f"No listing IDs found in config for property: {prop_name}. Skipping.") # <-- Log warning
             continue
 
         try:
-            print(f"--- Loading data for {prop_name} ---")
+            logging.info(f"--- Loading data for {prop_name} ---") # <-- Log info
             # Load event multipliers along with other data
             rate_table_df, date_tier_map, booked_blocked_set, occupancy_map, event_multiplier_map = dataloader.load_and_preprocess_data(prop_name, prop_config)
-            print(f"--- Data loaded for {prop_name}. Calculating rates... ---")
+            logging.info(f"--- Data loaded for {prop_name}. Calculating rates... ---") # <-- Log info
 
             date_range = pd.date_range(start_date, end_date, freq='D')
 
@@ -115,6 +145,7 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
 
                 if not tier_group:
                     # st.warning(f"Tier group not found for {current_date_str} in property {prop_name}. Skipping rate calculation for this date.")
+                    logging.warning(f"Property {prop_name}: Tier group not found for {current_date_str}. Skipping rate calculation for this date.") # <-- Log warning
                     # Option: Create a result row indicating missing tier?
                     continue # Skip this date if no tier
 
@@ -127,6 +158,7 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     rate_group_key = calculator._get_rate_group_for_listing_id(listing_id, prop_config)
                     if not rate_group_key:
                          # st.warning(f"Rate group key not found for listing {listing_id} in property {prop_name}. Skipping.")
+                         logging.warning(f"Property {prop_name}: Rate group key not found for listing {listing_id}. Skipping.") # <-- Log warning
                          continue
 
                     suggested_rate = None
@@ -138,48 +170,60 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     pace = 0.0 # Placeholder
                     calculated_tier = None # Initialize calculated tier
 
-                    # Check adjustment rules first
-                    # Now returns a tuple: (rate, tier)
-                    adjusted_rate, calculated_tier_from_adjustment = calculator.apply_adjustment_rules(
-                        current_date=current_date_obj,
-                        listing_id=listing_id,
-                        occupancy_pct=occupancy_pct,
-                        rate_table_df=rate_table_df,
-                        date_tier_map=date_tier_map,
-                        booked_blocked_set=booked_blocked_set,
-                        booking_window_label=booking_window,
-                        property_config=prop_config,
-                        today=today
-                    )
-
-                    if adjusted_rate is not None:
-                        suggested_rate = adjusted_rate
-                        flag = '↕️'
-                        # Use the tier returned by the adjustment rule logic
-                        calculated_tier = calculated_tier_from_adjustment
+                    # --- Check if Booked/Blocked ---
+                    if (listing_id, current_date_str) in booked_blocked_set:
+                        flag = '🔒 Booked'
+                        # Skip rate calculation, set rates to None or 0? Let's use None.
+                        suggested_rate = None
+                        adjusted_rate = None # Not applicable
+                        calculated_tier = None # Not applicable
+                        error_msg = None # Not applicable
                     else:
-                        # Standard lookup if no adjustment rule
-                        suggested_rate, calculated_tier, error_msg = calculator.lookup_rate(
-                            rate_table_df=rate_table_df,
-                            tier_group=tier_group,
-                            day_group=day_group,
-                            booking_window=booking_window,
+                        # --- Proceed with rate calculation only if not booked/blocked ---
+
+                        # Check adjustment rules first
+                        # Now returns a tuple: (rate, tier)
+                        adjusted_rate, calculated_tier_from_adjustment = calculator.apply_adjustment_rules(
+                            current_date=current_date_obj,
+                            listing_id=listing_id,
                             occupancy_pct=occupancy_pct,
-                            urgency_band=urgency_band,
-                            rate_group_key=rate_group_key
+                            rate_table_df=rate_table_df,
+                            date_tier_map=date_tier_map,
+                            booked_blocked_set=booked_blocked_set,
+                            booking_window_label=booking_window,
+                            property_config=prop_config,
+                            today=today
                         )
 
-                    # Apply event multiplier AFTER base rate calculation (adjustment or lookup)
-                    if suggested_rate is not None and event_multiplier is not None:
-                        suggested_rate *= event_multiplier
-                        # Prepend event flag, keep existing flags if any
-                        flag = "🗓️ " + flag 
+                        if adjusted_rate is not None:
+                            suggested_rate = adjusted_rate
+                            flag = '↕️'
+                            # Use the tier returned by the adjustment rule logic
+                            calculated_tier = calculated_tier_from_adjustment
+                        else:
+                            # Standard lookup if no adjustment rule
+                            suggested_rate, calculated_tier, error_msg = calculator.lookup_rate(
+                                rate_table_df=rate_table_df,
+                                tier_group=tier_group,
+                                day_group=day_group,
+                                booking_window=booking_window,
+                                occupancy_pct=occupancy_pct,
+                                urgency_band=urgency_band,
+                                rate_group_key=rate_group_key
+                            )
 
-                    if error_msg:
-                        # Decide how to handle lookup errors - skip row, default rate, specific flag?
-                        # st.warning(f"Rate lookup error for {listing_id} on {current_date_str}: {error_msg}")
-                        flag = '❌ Error' # Indicate lookup error
-                        suggested_rate = None # Ensure rate is None on error
+                        # Apply event multiplier AFTER base rate calculation (adjustment or lookup)
+                        if suggested_rate is not None and event_multiplier is not None:
+                            suggested_rate *= event_multiplier
+                            # Prepend event flag, keep existing flags if any
+                            flag = "🗓️ " + flag
+
+                        if error_msg:
+                            # Decide how to handle lookup errors - skip row, default rate, specific flag?
+                            # st.warning(f"Rate lookup error for {listing_id} on {current_date_str}: {error_msg}")
+                            logging.warning(f"Rate lookup error for Prop:{prop_name} Listing:{listing_id} Date:{current_date_str} - {error_msg}") # <-- Log the specific error
+                            flag = '❌ Error' # Indicate lookup error
+                            suggested_rate = None # Ensure rate is None on error
 
                     # Generate a unique ID for this rate instance
                     # Combine key elements for a somewhat readable ID
@@ -220,18 +264,23 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
 
         except (FileNotFoundError, KeyError, ValueError) as e:
             st.error(f"Error processing property {prop_name}: {e}")
+            logging.error(f"Error processing property {prop_name}: {e}") # Log main error
+            logging.error(f"{traceback.format_exc()}") # Log traceback separately
             traceback.print_exc() # Print full traceback for debugging
             continue # Skip to next property on error
         except Exception as e:
             st.error(f"Unexpected error processing property {prop_name}: {e}")
+            logging.error(f"Unexpected error processing property {prop_name}: {e}") # Log main error
+            logging.error(f"{traceback.format_exc()}") # Log traceback separately
             traceback.print_exc()
             continue
 
     if not all_results:
         st.warning("No rate results were generated. Check configuration and data files.")
+        logging.warning("No rate results were generated.") # <-- Log warning
         return None
 
-    print(f"--- Rate calculation complete. {len(all_results)} total rate entries generated. ---")
+    logging.info(f"--- Rate calculation complete. {len(all_results)} total rate entries generated. ---") # <-- Log info
     results_df = pd.DataFrame(all_results)
     return results_df
 

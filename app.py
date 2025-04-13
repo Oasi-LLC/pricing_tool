@@ -363,6 +363,9 @@ with results_area:
                          occ_hist = details['Occupancy %']['Historical']
                          st.metric(f"{COL_OCC_CURR} vs Hist", f"{occ_curr:.1f}%", f"{occ_curr - occ_hist:.1f}% vs {occ_hist:.1f}% Hist")
                     st.text(f"Flag Reason: {details[COL_FLAG]}")
+                    # Display the lookup error if it exists and the flag indicates an error
+                    if details[COL_FLAG] == '❌ Error' and details.get('lookup_error'):
+                        st.error(f"Error Details: {details['lookup_error']}")
                 else:
                     st.warning("Selected rate ID not found in current data. Please regenerate or select another.")
                     st.session_state.selected_rate_id = None # Clear invalid selection
