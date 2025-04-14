@@ -49,6 +49,54 @@ class PriceLabsAPI:
             logger.error(f"Error fetching overrides for listing {listing_id}: {e}")
             raise PriceLabsAPIError(f"Error fetching overrides: {e}")
 
+    def get_listing_daily_data(self, listing_id: str, pms: str, start_date: str, end_date: str) -> List[Dict]:
+        """Fetch daily price, availability, and booking status using the listing_prices endpoint."""
+        try:
+            payload = {
+                "listings": [
+                    {
+                        "id": listing_id,
+                        "pms": pms,
+                        "dateFrom": start_date,
+                        "dateTo": end_date
+                        # "reason": True # Optional: Add if detailed pricing reasons are needed
+                    }
+                ]
+            }
+            logger.debug(f"Fetching daily data for {listing_id} from {start_date} to {end_date}")
+            response = self.session.post(
+                f"{self.base_url}/listing_prices",
+                json=payload
+            )
+            response.raise_for_status()
+
+            # The response is a list containing one element (for the one listing requested)
+            # That element contains the 'data' key with the list of daily statuses.
+            response_data = response.json()
+            if isinstance(response_data, list) and len(response_data) > 0:
+                listing_data = response_data[0]
+                if 'data' in listing_data and isinstance(listing_data['data'], list):
+                    logger.info(f"Successfully fetched {len(listing_data['data'])} daily data points for {listing_id}")
+                    return listing_data['data']
+                elif 'status' in listing_data: # Handle potential error statuses within the response
+                    logger.error(f"API returned status '{listing_data['status']}' for listing {listing_id} in listing_prices call.")
+                    # You might want to raise an error or return an empty list depending on desired handling
+                    raise PriceLabsAPIError(f"Error fetching daily data: API status {listing_data['status']} for {listing_id}")
+                else:
+                    logger.warning(f"Unexpected response structure for listing {listing_id} in listing_prices: {listing_data}")
+                    return []
+            else:
+                logger.warning(f"Received empty or invalid response for listing {listing_id} from listing_prices: {response_data}")
+                return []
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching daily data (listing_prices) for listing {listing_id}: {e}")
+            raise PriceLabsAPIError(f"Error fetching daily data: {e}")
+        except Exception as e:
+            # Catch other potential issues like JSON decoding errors
+            logger.error(f"Unexpected error processing daily data for listing {listing_id}: {e}")
+            raise PriceLabsAPIError(f"Unexpected error processing daily data: {e}")
+
     def update_listing_overrides(
         self,
         listing_id: str,

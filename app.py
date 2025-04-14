@@ -4,6 +4,7 @@ import datetime
 import traceback # Import traceback for more detailed error logging if needed
 import numpy as np # Import numpy for calculations
 from pathlib import Path # Add Path import
+import re # Import regex for parsing
 
 # Import backend interface functions
 from utils import backend_interface
@@ -81,39 +82,173 @@ if 'optional_columns' not in st.session_state:
     st.session_state.optional_columns = [] # Default to none selected
 if 'results_are_displayed' not in st.session_state:
      st.session_state.results_are_displayed = False
+# Add state for checkbox selections
+if 'checkbox_selections' not in st.session_state:
+    st.session_state.checkbox_selections = {}
+
+# --- Add Filter Session State Initialization (Milestone 2) ---
+filter_defaults = {
+    'filter_start_date': None, 'filter_end_date': None,
+    'filter_properties': [], 'filter_tiers': [], 'filter_dow': [],
+    'filter_min_occ': None, 'filter_max_occ': None,
+    'filter_min_live_rate': None, 'filter_max_live_rate': None,
+    'filter_min_delta': None, 'filter_max_delta': None,
+    'filter_flags': [], 'filter_statuses': []
+}
+for key, default_value in filter_defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = default_value
+
+# --- Add Toggle Session State Initialization ---
+# Active source column name
+if 'active_rate_source_col' not in st.session_state:
+     st.session_state.active_rate_source_col = COL_LIVE_RATE # Default source
+# UI toggle state
+if 'rate_source_toggle' not in st.session_state:
+    st.session_state.rate_source_toggle = 'Use Live Rate' # New default
+
+# --- Natural Sort Helper for Tiers (Fix for Issue 3) ---
+def natural_sort_key_tier(tier_string):
+    """Provides a sort key for tier strings like 'T0', 'T10', 'None'."""
+    if tier_string is None:
+        return (-1, tier_string) # Place None types first
+    tier_string = str(tier_string)
+    match = re.match(r'T(\d+)', tier_string, re.IGNORECASE)
+    if match:
+        return (0, int(match.group(1))) # Sort numerically if pattern matches
+    else:
+        return (1, tier_string) # Place non-matching strings (like 'None') after None but before Tiers
+
+# --- Callback Function for Clearing Filters (Fix for Issue 2) ---
+def clear_all_filter_states():
+    for key, default_value in filter_defaults.items():
+        st.session_state[key] = default_value
+    # No rerun needed here, Streamlit handles rerun after callback
+
+# --- Callback Function for Updating Editable Rate Source ---
+# --- MODIFIED Callback: Only updates the active source column name state ---
+def update_editable_rate_source():
+    toggle_value = st.session_state.get('rate_source_toggle', 'Use Live Rate')
+    
+    new_source_col_name = COL_LIVE_RATE # Default
+    if toggle_value == 'Use Suggested Rate':
+        new_source_col_name = COL_SUGGESTED_SRC
+    elif toggle_value == 'Use Live Rate':
+        new_source_col_name = COL_LIVE_RATE
+
+    st.session_state.active_rate_source_col = new_source_col_name
+    print(f"[DEBUG] Callback set active_rate_source_col to: {new_source_col_name}")
+    # No explicit rerun needed, state change handled by Streamlit
 
 # --- Helper Functions ---
 # (Could be moved to utils/frontend_utils.py later)
-def prepare_calendar_data(df, focus_date, days_around=7):
-    """Pivots rate data for calendar display around a focus date."""
+# def prepare_calendar_data(df, focus_date, days_around=7):
+#     """Pivots rate data for calendar display around a focus date."""
+#     if df is None or df.empty:
+#         return pd.DataFrame()
+    
+#     start_display = focus_date - datetime.timedelta(days=days_around)
+#     end_display = focus_date + datetime.timedelta(days=days_around)
+    
+#     # Ensure Date column is datetime type if not already
+#     if not pd.api.types.is_datetime64_any_dtype(df[COL_DATE]):
+#         # Attempt conversion, handle potential errors if format is inconsistent
+#         try:
+#             df[COL_DATE] = pd.to_datetime(df[COL_DATE]).dt.date
+#         except ValueError:
+#             st.error("Calendar View Error: Could not convert 'Date' column to datetime objects.")
+#             return pd.DataFrame()
+        
+#     calendar_df = df[(df[COL_DATE] >= start_display) & (df[COL_DATE] <= end_display)].copy()
+    
+#     if calendar_df.empty:
+#         return pd.DataFrame()
+        
+#     try:
+#         # Use Editable Price for calendar if available and reflects edits
+#         pivot = pd.pivot_table(calendar_df, values=COL_EDITABLE_PRICE_SRC, index='Unit Pool', columns=COL_DATE, aggfunc='mean')
+#         pivot.columns = [col.strftime('%Y-%m-%d') for col in pivot.columns]
+#         return pivot
+#     except Exception as e:
+#         st.error(f"Error creating calendar pivot: {e}")
+#         return pd.DataFrame()
+
+# --- Add apply_filters Function (Milestone 3) ---
+def apply_filters(df, filter_state):
+    """Applies filters to the DataFrame based on the filter_state dictionary."""
     if df is None or df.empty:
-        return pd.DataFrame()
-    
-    start_display = focus_date - datetime.timedelta(days=days_around)
-    end_display = focus_date + datetime.timedelta(days=days_around)
-    
-    # Ensure Date column is datetime type if not already
-    if not pd.api.types.is_datetime64_any_dtype(df[COL_DATE]):
-        # Attempt conversion, handle potential errors if format is inconsistent
-        try:
-            df[COL_DATE] = pd.to_datetime(df[COL_DATE]).dt.date
-        except ValueError:
-            st.error("Calendar View Error: Could not convert 'Date' column to datetime objects.")
-            return pd.DataFrame()
-        
-    calendar_df = df[(df[COL_DATE] >= start_display) & (df[COL_DATE] <= end_display)].copy()
-    
-    if calendar_df.empty:
-        return pd.DataFrame()
-        
-    try:
-        # Use Editable Price for calendar if available and reflects edits
-        pivot = pd.pivot_table(calendar_df, values=COL_EDITABLE_PRICE_SRC, index='Unit Pool', columns=COL_DATE, aggfunc='mean')
-        pivot.columns = [col.strftime('%Y-%m-%d') for col in pivot.columns]
-        return pivot
-    except Exception as e:
-        st.error(f"Error creating calendar pivot: {e}")
-        return pd.DataFrame()
+         return pd.DataFrame() # Return empty if no data
+
+    filtered_df = df.copy() # Start with a copy
+
+    # Apply Date Filter (ensure date column is datetime.date or compatible)
+    date_col = COL_DATE # Use the constant defined earlier
+    if date_col not in filtered_df.columns:
+        st.warning(f"Date column '{date_col}' not found for filtering.")
+    else:
+        # Convert to datetime objects first if not already, then extract date
+        if not pd.api.types.is_datetime64_any_dtype(filtered_df[date_col]) and not all(isinstance(d, datetime.date) for d in filtered_df[date_col].dropna()):
+            try:
+                filtered_df[date_col] = pd.to_datetime(filtered_df[date_col]).dt.date
+            except Exception as e:
+                st.warning(f"Could not parse Date column '{date_col}' for filtering: {e}")
+                # Continue filtering with potentially unparsed dates
+
+        start_date = filter_state.get('filter_start_date')
+        end_date = filter_state.get('filter_end_date')
+        # Ensure comparison is possible if conversion failed but dates exist
+        if start_date and date_col in filtered_df.columns:
+             try:
+                filtered_df = filtered_df[filtered_df[date_col] >= start_date]
+             except TypeError: # Handle case where comparison fails (e.g., comparing string and date)
+                 st.warning(f"Could not apply start date filter due to type mismatch in {date_col}.")
+        if end_date and date_col in filtered_df.columns:
+             try:
+                filtered_df = filtered_df[filtered_df[date_col] <= end_date]
+             except TypeError:
+                 st.warning(f"Could not apply end date filter due to type mismatch in {date_col}.")
+
+    # Apply Multiselect Filters (using source/derived column names)
+    multi_select_filters = {
+        'filter_properties': COL_PROPERTY_SRC, # Use source name
+        'filter_tiers': COL_CALCULATED_TIER_SRC,       # Use source name
+        'filter_dow': COL_DAY_OF_WEEK,    # Use derived name
+        'filter_flags': COL_FLAG,         # Use standard name
+        'filter_statuses': COL_STATUS      # Use standard name
+    }
+    for state_key, col_name in multi_select_filters.items():
+        if col_name not in filtered_df.columns:
+             st.warning(f"Multiselect filter column '{col_name}' not found.")
+             continue # Skip this filter if column missing
+        selected_values = filter_state.get(state_key)
+        if selected_values: # If list is not empty
+            # Convert column to string for robust comparison, handle potential NaN
+            # Also convert selected_values to string in case they are not
+            filtered_df = filtered_df[filtered_df[col_name].astype(str).isin([str(v) for v in selected_values])]
+
+    # Apply Numeric Range Filters (using standard/derived column names)
+    numeric_filters = {
+        'filter_min_occ': (COL_OCC_CURR, '>='), 'filter_max_occ': (COL_OCC_CURR, '<='),
+        'filter_min_live_rate': (COL_LIVE_RATE, '>='), 'filter_max_live_rate': (COL_LIVE_RATE, '<='),
+        'filter_min_delta': (COL_DELTA, '>='), 'filter_max_delta': (COL_DELTA, '<='),
+    }
+    for state_key, (col_name, operator) in numeric_filters.items():
+         if col_name not in filtered_df.columns:
+              st.warning(f"Numeric filter column '{col_name}' not found.")
+              continue # Skip if column missing
+
+         filter_value = filter_state.get(state_key)
+         if filter_value is not None:
+              # Ensure column is numeric, coerce errors to NaN
+              numeric_col = pd.to_numeric(filtered_df[col_name], errors='coerce')
+              # Filter out rows where conversion failed (NaN)
+              valid_rows = numeric_col.notna()
+              if operator == '>=':
+                   filtered_df = filtered_df[valid_rows & (numeric_col[valid_rows] >= filter_value)]
+              elif operator == '<=':
+                   filtered_df = filtered_df[valid_rows & (numeric_col[valid_rows] <= filter_value)]
+
+    return filtered_df
 
 # --- Main App Structure --- 
 st.write("Configure parameters and generate rates to begin the review process.")
@@ -184,6 +319,7 @@ with config_area:
             st.session_state.edited_rates_df = None  # Reset previous edits
             st.session_state.selected_rate_id = None # Reset selection on new generation
             st.session_state.results_are_displayed = False # Reset display flag
+            st.session_state.editable_rate_initialized = False # Reset initialization flag
             st.rerun() # Rerun to immediately show spinner in results area
     
     st.markdown("--- ") # Use standard markdown horizontal rule
@@ -262,8 +398,26 @@ with results_area:
                     merged_df = generated_df.copy()
                     merged_df[COL_LIVE_RATE] = 0.0 # Ensure column exists with 0
                 
-                st.session_state.edited_rates_df = merged_df.copy() # Now initialize edited state
-                # --- Add Live Rate Data Merge --- End
+                # --- Initialize Editable Rate Column based on Default Toggle State ---
+                # This happens only once when data is first generated/merged.
+                if not st.session_state.get('editable_rate_initialized', False):
+                    print("[DEBUG] Running Editable Rate Initialization") # Add debug print
+                    initial_source_col = COL_LIVE_RATE # Default to live rate
+                    if initial_source_col in merged_df.columns:
+                        if COL_EDITABLE_PRICE_SRC not in merged_df.columns:
+                             st.info(f"Initializing '{COL_EDITABLE_PRICE_SRC}' based on default '{initial_source_col}'.")
+                        # Set or overwrite Editable Price with the default source
+                        merged_df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(merged_df[initial_source_col], errors='coerce').fillna(0.0)
+                        st.session_state.editable_rate_initialized = True # Set flag after successful init
+                        print("[DEBUG] Initialization complete, flag set to True.")
+                    else:
+                        st.warning(f"Default source column '{initial_source_col}' not found. Cannot initialize Editable Rate.")
+                        # Ensure Editable Rate exists even if source is missing
+                        if COL_EDITABLE_PRICE_SRC not in merged_df.columns:
+                            merged_df[COL_EDITABLE_PRICE_SRC] = 0.0 # Or np.nan
+
+                # Now store the prepared dataframe in session state
+                st.session_state.edited_rates_df = merged_df.copy()
                 
                 # Set focus date only if data loaded successfully
                 st.session_state.focus_date = pd.to_datetime(generated_df[COL_DATE]).min().date()
@@ -282,117 +436,146 @@ with results_area:
             st.session_state.generate_clicked = False # Reset flag on error
 
     # --- Display Area (only show if results are ready) ---
+    # --- Apply Rate Source Toggle Logic ---
+    # This block runs on every rerun after data is loaded
+    if 'edited_rates_df' in st.session_state and isinstance(st.session_state.edited_rates_df, pd.DataFrame):
+        active_source = st.session_state.get('active_rate_source_col', COL_LIVE_RATE)
+        target_col = COL_EDITABLE_PRICE_SRC
+        df = st.session_state.edited_rates_df # Modify state directly before passing down
+
+        if active_source in df.columns and target_col in df.columns:
+             print(f"[DEBUG] Applying active source '{active_source}' to '{target_col}'.")
+             try:
+                 current_editable_head = df[target_col].head().to_string()
+                 # Check if update is actually needed to avoid unnecessary writes
+                 if not df[target_col].equals(pd.to_numeric(df[active_source], errors='coerce').fillna(0.0)):
+                     df[target_col] = pd.to_numeric(df[active_source], errors='coerce').fillna(0.0)
+                     st.session_state.edited_rates_df = df # Ensure state is updated if modified
+                     print(f"[DEBUG] Updated '{target_col}' from '{active_source}'. New head: {df[target_col].head()}")
+                 else:
+                      print(f"[DEBUG] '{target_col}' already matches '{active_source}'. No update needed.")
+             except Exception as e:
+                 st.error(f"Error applying rate source '{active_source}' to '{target_col}': {e}")
+        elif active_source not in df.columns:
+             st.warning(f"Active source column '{active_source}' not found.")
+
     if st.session_state.results_are_displayed and st.session_state.edited_rates_df is not None:
         
-        # Prepare dataframe for display (copy to avoid modifying session state directly)
-        current_display_df = st.session_state.edited_rates_df.copy()
+        # Get the source DataFrame (potentially already edited and with source toggled)
+        display_df_source = st.session_state.get('edited_rates_df', pd.DataFrame()).copy() # Work on a copy
         
-        # --- Calculate derived columns for display --- 
-        # Day of Week
-        try:
-            # Ensure date column is datetime-like for weekday calculation
-            date_col_dt = pd.to_datetime(current_display_df[COL_DATE], errors='coerce')
-            # Use .dt accessor for weekday name
-            current_display_df[COL_DAY_OF_WEEK] = date_col_dt.dt.strftime('%A') 
-        except Exception as e:
-            st.warning(f"Could not calculate Day of Week: {e}")
-            current_display_df[COL_DAY_OF_WEEK] = "Error"
+        # --- Calculate derived columns NEEDED FOR FILTERING directly on the source df --- 
+        if not display_df_source.empty:
+            # Calculate derived columns if they don't already exist
+            if COL_DAY_OF_WEEK not in display_df_source.columns:
+                try:
+                    if COL_DATE in display_df_source.columns:
+                        date_col_dt = pd.to_datetime(display_df_source[COL_DATE], errors='coerce')
+                        display_df_source[COL_DAY_OF_WEEK] = date_col_dt.dt.strftime('%A')
+                    else:
+                        display_df_source[COL_DAY_OF_WEEK] = "N/A"
+                except Exception as e:
+                    st.warning(f"Could not calculate Day of Week: {e}")
+                    display_df_source[COL_DAY_OF_WEEK] = "Error"
 
-        # --- Delta calculation (Now use COL_LIVE_RATE) ---
-        if COL_LIVE_RATE in current_display_df.columns and COL_SUGGESTED_SRC in current_display_df.columns:
-            live_rate = pd.to_numeric(current_display_df[COL_LIVE_RATE], errors='coerce').fillna(0.0) # Fillna with 0
-            suggested = pd.to_numeric(current_display_df[COL_SUGGESTED_SRC], errors='coerce')
-            
-            # Calculate delta where live_rate is not zero
-            delta = np.where(
-                live_rate != 0, 
-                ((suggested - live_rate) / live_rate) * 100, 
-                np.nan # Or perhaps 0 or a specific string like 'N/A' if live rate is 0?
-            )
-            current_display_df[COL_DELTA] = delta
-        else:
-            current_display_df[COL_DELTA] = np.nan # Ensure column exists if calculation fails
-
-
-        # --- Calendar View --- (FR8, FR9)
-        calendar_container = st.container()
-        with calendar_container:
-            st.markdown("#### Contextual Calendar View")
-            cal_col1, cal_col2, cal_col3 = st.columns([1, 3, 1])
-            with cal_col1:
-                 if st.button("< Prev Week", key='prev_week'):
-                     st.session_state.focus_date -= datetime.timedelta(days=7)
-                     st.rerun()
-            with cal_col3:
-                if st.button("Next Week >", key='next_week'):
-                     st.session_state.focus_date += datetime.timedelta(days=7)
-                     st.rerun()
-            with cal_col2:
-                 st.markdown(f"**Focus Date:** {st.session_state.focus_date.strftime('%Y-%m-%d')}")
-            
-            # Use current_display_df (editable state) for calendar pivot
-            calendar_pivot = prepare_calendar_data(current_display_df, st.session_state.focus_date)
-            if not calendar_pivot.empty:
-                 # Format NaN properly for display
-                 st.dataframe(calendar_pivot.style.format("${:.2f}", na_rep="-").highlight_null(), use_container_width=True)
-            else:
-                 st.write("No rate data available for the selected week around the focus date.")
-
-        # --- Detail Pane --- (FR6, FR7)
-        detail_container = st.container()
-        with detail_container:
-            if st.session_state.selected_rate_id:
-                st.markdown("#### Focus Detail")
-                # Find the row in the *current* display dataframe
-                selected_row_data = current_display_df[current_display_df[COL_ID] == st.session_state.selected_rate_id]
-                if not selected_row_data.empty:
-                    # Pass the actual data Series to the backend function
-                    details = backend_interface.get_rate_details(selected_row_data.iloc[0])
-                    st.markdown(f"**{COL_PROPERTY}:** {details[COL_PROPERTY]} | **{COL_DATE}:** {details[COL_DATE].strftime('%Y-%m-%d')}")
-                    det_col1, det_col2, det_col3 = st.columns(3)
-                    with det_col1:
-                        st.metric("Suggested Rate", f"${details['Suggested Price']:.2f}")
-                        # st.metric("Live Rate", f"${details[COL_BASELINE_SRC]:.2f}") # Revert baseline usage
-                        live_rate_val = details.get(COL_LIVE_RATE, 0.0) # Safely get value, default to 0.0
-                        st.metric("Live Rate", f"${live_rate_val:.2f}") # Use the correct merged column
-                    with det_col2:
-                        st.metric("Current Live Rate", f"${details['Current Live Rate']:.2f}")
-                        st.metric("Historical Pace", f"{details['Historical Pace']:.1f}")
-                    with det_col3:
-                         occ_curr = details['Occupancy %']['Current']
-                         occ_hist = details['Occupancy %']['Historical']
-                         st.metric(f"{COL_OCC_CURR} vs Hist", f"{occ_curr:.1f}%", f"{occ_curr - occ_hist:.1f}% vs {occ_hist:.1f}% Hist")
-                    st.text(f"Flag Reason: {details[COL_FLAG]}")
-                    # Display the lookup error if it exists and the flag indicates an error
-                    if details[COL_FLAG] == '❌ Error' and details.get('lookup_error'):
-                        st.error(f"Error Details: {details['lookup_error']}")
+            # Delta Calculation
+            if COL_DELTA not in display_df_source.columns:
+                if COL_LIVE_RATE in display_df_source.columns and COL_SUGGESTED_SRC in display_df_source.columns:
+                    live_rate = pd.to_numeric(display_df_source[COL_LIVE_RATE], errors='coerce').fillna(0.0)
+                    suggested = pd.to_numeric(display_df_source[COL_SUGGESTED_SRC], errors='coerce')
+                    
+                    delta = np.where(
+                        live_rate != 0, 
+                        ((suggested - live_rate) / live_rate) * 100, 
+                        np.nan
+                    )
+                    display_df_source[COL_DELTA] = delta
                 else:
-                    st.warning("Selected rate ID not found in current data. Please regenerate or select another.")
-                    st.session_state.selected_rate_id = None # Clear invalid selection
-            else:
-                st.info("Select 'View Details' on a row in the grid below to see details here.")
-        st.markdown("--- ")
+                    display_df_source[COL_DELTA] = np.nan
+        # --------------------------------------------------------------------------
 
-        # --- Display Grid Logic --- (FR4, FR5)
+        # --- Populate Dynamic Filter Options (Milestone 2) ---
+        # Define fallback empty lists first
+        dynamic_property_options, dynamic_tier_options, dynamic_dow_options, dynamic_flag_options, dynamic_status_options = [], [], [], [], []
+        # Now use display_df_source which has derived columns
+        if not display_df_source.empty:
+            # Use source column names defined earlier
+            # Ensure columns exist and handle potential NaNs by converting to string
+            if COL_PROPERTY_SRC in display_df_source: dynamic_property_options = sorted(display_df_source[COL_PROPERTY_SRC].astype(str).unique())
+            if COL_CALCULATED_TIER_SRC in display_df_source:
+                # Use natural sort key for Tiers (Fix for Issue 3)
+                unique_tiers = display_df_source[COL_CALCULATED_TIER_SRC].astype(str).unique()
+                dynamic_tier_options = sorted(unique_tiers, key=natural_sort_key_tier)
+            if COL_DAY_OF_WEEK in display_df_source: dynamic_dow_options = sorted(display_df_source[COL_DAY_OF_WEEK].astype(str).unique()) # Now should exist
+            if COL_FLAG in display_df_source: dynamic_flag_options = sorted(display_df_source[COL_FLAG].astype(str).unique())
+            if COL_STATUS in display_df_source: dynamic_status_options = sorted(display_df_source[COL_STATUS].astype(str).unique())
+
+        # --- Add Editable Rate Source Toggle UI ---
+        st.radio(
+            "Set Initial Value for Editable Rate $",
+            options=['Use Live Rate', 'Use Suggested Rate'],
+            key='rate_source_toggle', # Link to session state
+            horizontal=True,
+            on_change=update_editable_rate_source # Trigger callback on change
+        )
+        st.markdown("--- ") # Separator
+
+        with st.expander("Filter Displayed Rates", expanded=True):
+            filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+            with filter_col1:
+                # Link to session state (Milestone 2)
+                st.date_input("Filter Start Date", key='filter_start_date') # value managed by key
+                st.date_input("Filter End Date", key='filter_end_date')
+                st.multiselect("Filter Properties", options=dynamic_property_options, key='filter_properties') 
+                st.multiselect("Filter Tiers", options=dynamic_tier_options, key='filter_tiers') 
+            with filter_col2:
+                st.multiselect("Filter Day of Week", options=dynamic_dow_options, key='filter_dow') # Options now populated
+                st.multiselect("Filter Flags", options=dynamic_flag_options, key='filter_flags')
+                st.multiselect("Filter Status", options=dynamic_status_options, key='filter_statuses')
+            with filter_col3:
+                st.number_input("Min Occ% (Curr)", key='filter_min_occ', placeholder="Enter min %", step=0.1, format="%.1f")
+                st.number_input("Max Occ% (Curr)", key='filter_max_occ', placeholder="Enter max %", step=0.1, format="%.1f")
+                st.number_input("Min Live Rate $", key='filter_min_live_rate', placeholder="Enter min $", step=0.01, format="%.2f")
+                st.number_input("Max Live Rate $", key='filter_max_live_rate', placeholder="Enter max $", step=0.01, format="%.2f")
+            with filter_col4:
+                st.number_input("Min Delta %", key='filter_min_delta', placeholder="Enter min %", step=0.1, format="%.1f")
+                st.number_input("Max Delta %", key='filter_max_delta', placeholder="Enter max %", step=0.1, format="%.1f")
+                st.markdown("<br/>", unsafe_allow_html=True) # Add some space
+
+                # Modified Clear Button to use callback (Fix for Issue 2)
+                st.button("Clear All Filters", key="clear_filters_m2_cb", on_click=clear_all_filter_states)
+
         grid_container = st.container()
-        with grid_container:
-            # Use the dataframe from session state which now includes derived columns
-            df_for_editor = current_display_df # Use the df with derived columns
-            
-            # Ensure Select/View Details columns exist (should already be there)
-            if COL_SELECT not in df_for_editor.columns: df_for_editor.insert(0, COL_SELECT, False)
-            if COL_VIEW_DETAILS not in df_for_editor.columns: df_for_editor.insert(1, COL_VIEW_DETAILS, False)
+        # --- Filter Data Integration (Milestone 3) ---
+        # display_df_source already retrieved and includes derived columns now
+        if not display_df_source.empty:
+             # Create filter_state dict from current st.session_state values
+             current_filter_state = {key: st.session_state.get(key) for key in filter_defaults.keys()}
+             # Apply filters
+             filtered_display_df = apply_filters(display_df_source, current_filter_state) # Apply filters to df with derived cols
+        else:
+             filtered_display_df = pd.DataFrame() # Start with empty if no source data
 
+        # --- Display Grid with Filtered Data ---
+        with grid_container: # Now display the grid using the filtered data
+            df_for_editor = filtered_display_df # Use the filtered df which has derived cols
+            
+            print(f"[DEBUG] Passing DataFrame to data_editor. Target Col (head): {df_for_editor[COL_EDITABLE_PRICE_SRC].head()}") # Log 6
+            
+            # Ensure Select column exists
+            if COL_SELECT not in df_for_editor.columns: df_for_editor.insert(0, COL_SELECT, False)
+            
             st.markdown("#### Rate Review Grid")
             # st.dataframe(df_for_editor.head()) # Debug: Check columns before editor
             # --- Add Debug Info --- Start
             # st.write("DEBUG: Columns in DataFrame passed to editor:", df_for_editor.columns.tolist())
             # --- Add Debug Info --- End
-            prev_selected_id = st.session_state.selected_rate_id
+            # prev_selected_id = st.session_state.selected_rate_id # Commented out - no longer needed
             
             # --- Dynamic Column Config for Data Editor (Check if COL_DAY_OF_WEEK is included) --- 
             potential_display_order_concepts = [
-                COL_SELECT, COL_VIEW_DETAILS, COL_DATE, COL_PROPERTY, COL_LISTING_NAME, COL_TIER, COL_DAY_OF_WEEK, COL_OCC_CURR,
+                # COL_SELECT, COL_VIEW_DETAILS, COL_DATE, COL_PROPERTY, COL_LISTING_NAME, COL_TIER, COL_DAY_OF_WEEK, COL_OCC_CURR, # Removed VIEW_DETAILS
+                COL_SELECT, COL_DATE, COL_PROPERTY, COL_LISTING_NAME, COL_TIER, COL_DAY_OF_WEEK, COL_OCC_CURR,
                 COL_LIVE_RATE, COL_SUGGESTED, COL_DELTA,
                 COL_EDITABLE_PRICE, 
                 COL_FLAG] + st.session_state.optional_columns + [COL_STATUS]
@@ -420,7 +603,8 @@ with results_area:
 
             full_column_config = {
                 COL_SELECT: st.column_config.CheckboxColumn("Select", help="Select rows for batch actions", default=False),
-                COL_VIEW_DETAILS: st.column_config.CheckboxColumn("Details", help="View details for this row", default=False),
+                # COL_VIEW_DETAILS: st.column_config.CheckboxColumn("Details", help="View details for this row", default=False), # Removed
+                COL_VIEW_DETAILS: None, # Ensure it's hidden
                 COL_ID: None, 
                 COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
                 COL_PROPERTY_SRC: st.column_config.TextColumn("Property"),
@@ -470,7 +654,7 @@ with results_area:
 
             # Use source dataframe for editor, but control display/order/config
             edited_df_result = st.data_editor(
-                df_for_editor, 
+                df_for_editor, # Now passing the filtered dataframe
                 key='rate_grid_editor',
                 hide_index=True,
                 column_order=display_order_actual_cols, # Use the list of actual column names
@@ -479,38 +663,83 @@ with results_area:
                 use_container_width=True
             )
             
-            # No merge needed now as we edit the full df and just control display
-            st.session_state.edited_rates_df = edited_df_result 
-            
-            # --- Logic to Handle Detail View Selection --- 
-            selected_rows = edited_df_result[edited_df_result[COL_VIEW_DETAILS] == True]
-            current_selection_id = None
-            focus_date_from_selection = None
-
-            if len(selected_rows) == 1:
-                selected_index = selected_rows.index[0]
-                current_selection_id = edited_df_result.loc[selected_index, COL_ID]
-                focus_date_from_selection = pd.to_datetime(edited_df_result.loc[selected_index, COL_DATE]).date()
-                if current_selection_id != prev_selected_id:
-                    st.session_state.selected_rate_id = current_selection_id
-                    if focus_date_from_selection:
-                       st.session_state.focus_date = focus_date_from_selection
-                    st.rerun()
-            elif len(selected_rows) > 1:
-                st.warning("Please select only one row to view details.")
-                if prev_selected_id:
-                     st.session_state.selected_rate_id = prev_selected_id
-                     prev_row_indices = edited_df_result[edited_df_result[COL_ID] == prev_selected_id].index
-                     if not prev_row_indices.empty:
-                         st.session_state.edited_rates_df.loc[prev_row_indices, COL_VIEW_DETAILS] = True 
-                         st.session_state.edited_rates_df.loc[st.session_state.edited_rates_df[COL_ID] != prev_selected_id, COL_VIEW_DETAILS] = False
+            # --- Edit Persistence Logic (Milestone 4) ---
+            # Compare the DataFrame returned by the editor with the filtered DataFrame passed into it.
+            # Reset indices for accurate comparison, as filtering changes the index.
+            if not df_for_editor.reset_index(drop=True).equals(edited_df_result.reset_index(drop=True)):
+                # Edits were made in the data editor.
+                if COL_ID not in edited_df_result.columns:
+                    st.error(f"Critical Error: Unique ID column '{COL_ID}' missing after edit. Cannot save changes.")
+                elif display_df_source is None or display_df_source.empty:
+                    st.error("Cannot save edits: Original data source (edited_rates_df) is missing or empty.")
                 else:
-                     st.session_state.selected_rate_id = None
-                     st.session_state.edited_rates_df[COL_VIEW_DETAILS] = False
-                st.rerun()
-            elif len(selected_rows) == 0 and prev_selected_id is not None:
-                 st.session_state.selected_rate_id = None
-                 st.rerun()
+                    try:
+                        # Use the unique ID (COL_ID) as index for efficient update.
+                        edited_subset_indexed = edited_df_result.set_index(COL_ID)
+                        original_full_indexed = display_df_source.set_index(COL_ID)
+
+                        # Define the columns that are user-editable in the grid config.
+                        editable_source_columns = [COL_EDITABLE_PRICE_SRC, COL_SELECT]
+
+                        # Update the original full DataFrame using the edited subset.
+                        # .update aligns on index (COL_ID) and updates only the specified columns.
+                        original_full_indexed.update(edited_subset_indexed[editable_source_columns])
+
+                        # Store checkbox selections in session state
+                        checkbox_state = edited_df_result.set_index(COL_ID)[COL_SELECT].to_dict()
+                        st.session_state.checkbox_selections = checkbox_state
+
+                        # Save the updated full DataFrame back to session state.
+                        st.session_state['edited_rates_df'] = original_full_indexed.reset_index()
+                        st.toast("Changes saved.", icon="💾")
+                        # Rerun to ensure UI consistency after state update.
+                        st.rerun()
+
+                    except KeyError as e:
+                        # Handle cases where COL_ID or editable columns might be missing unexpectedly.
+                        st.error(f"Error saving changes: Could not find index/column '{e}'. Edits might be lost.")
+                    except Exception as e:
+                        # Catch any other unexpected errors during the update process.
+                        st.error(f"An unexpected error occurred while saving edits: {e}")
+                        st.exception(e) # Log the full traceback for debugging
+
+            # Ensure Select column exists and restore checkbox state
+            if COL_SELECT not in df_for_editor.columns: 
+                df_for_editor.insert(0, COL_SELECT, False)
+
+            # Restore checkbox state from session state if available
+            if st.session_state.checkbox_selections:
+                df_for_editor[COL_SELECT] = df_for_editor[COL_ID].map(st.session_state.checkbox_selections).fillna(False)
+
+            # --- Logic to Handle Detail View Selection --- COMMENTED OUT
+            # selected_rows = edited_df_result[edited_df_result[COL_VIEW_DETAILS] == True]
+            # current_selection_id = None
+            # focus_date_from_selection = None
+
+            # if len(selected_rows) == 1:
+            #     selected_index = selected_rows.index[0]
+            #     current_selection_id = edited_df_result.loc[selected_index, COL_ID]
+            #     focus_date_from_selection = pd.to_datetime(edited_df_result.loc[selected_index, COL_DATE]).date()
+            #     if current_selection_id != prev_selected_id:
+            #         st.session_state.selected_rate_id = current_selection_id
+            #         if focus_date_from_selection:
+            #            st.session_state.focus_date = focus_date_from_selection
+            #         st.rerun()
+            # elif len(selected_rows) > 1:
+            #     st.warning("Please select only one row to view details.")
+            #     if prev_selected_id:
+            #          st.session_state.selected_rate_id = prev_selected_id
+            #          prev_row_indices = edited_df_result[edited_df_result[COL_ID] == prev_selected_id].index
+            #          if not prev_row_indices.empty:
+            #              st.session_state.edited_rates_df.loc[prev_row_indices, COL_VIEW_DETAILS] = True 
+            #              st.session_state.edited_rates_df.loc[st.session_state.edited_rates_df[COL_ID] != prev_selected_id, COL_VIEW_DETAILS] = False
+            #     else:
+            #          st.session_state.selected_rate_id = None
+            #          st.session_state.edited_rates_df[COL_VIEW_DETAILS] = False
+            #     st.rerun()
+            # elif len(selected_rows) == 0 and prev_selected_id is not None:
+            #      st.session_state.selected_rate_id = None
+            #      st.rerun()
 
         # --- Actions Container --- (FR10, FR11, FR12)
         st.markdown("--- ")
