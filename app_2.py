@@ -401,27 +401,181 @@ with results_area:
 
         # Configure AgGrid
         gb = GridOptionsBuilder.from_dataframe(display_df)
-        gb.configure_selection(selection_mode='multiple', use_checkbox=True)
-        gb.configure_column(COL_SELECT, headerCheckboxSelection=True, headerCheckboxSelectionFilteredOnly=True)
-        gb.configure_column(COL_DATE, type=["dateColumnFilter", "customDateTimeFormat"], custom_format_string='YYYY-MM-DD')
-        gb.configure_column(COL_LIVE_RATE, type=["numericColumn", "numberColumnFilter", "customNumericFormat"], precision=2, valueFormatter="'$' + value.toFixed(2)")
-        gb.configure_column(COL_SUGGESTED_SRC, type=["numericColumn", "numberColumnFilter", "customNumericFormat"], precision=2, valueFormatter="'$' + value.toFixed(2)")
-        gb.configure_column(COL_EDITABLE_PRICE_SRC, type=["numericColumn", "numberColumnFilter", "customNumericFormat"], precision=2, valueFormatter="'$' + value.toFixed(2)", editable=True)
-        gb.configure_column(COL_DELTA, type=["numericColumn", "numberColumnFilter", "customNumericFormat"], precision=1, valueFormatter="value.toFixed(1) + '%'")
         
-        # Configure grid options with selection callback
-        gb.configure_grid_options(
-            onSelectionChanged="""
-            function() {
-                var selectedRows = this.api.getSelectedRows();
-                var selectedIds = selectedRows.map(function(row) { return row._id; });
-                window.parent.postMessage({
-                    type: 'custom',
-                    selectedIds: selectedIds
-                }, '*');
-            }
-            """
+        # Define column order to match original app.py
+        column_order = [
+            COL_SELECT,  # Ensure Select is first
+            '_id',       # Add ID column
+            COL_DATE,
+            COL_PROPERTY_SRC,
+            COL_TIER,
+            COL_DAY_OF_WEEK,
+            COL_OCC_CURR,
+            COL_LIVE_RATE,
+            COL_SUGGESTED_SRC,
+            COL_DELTA,
+            COL_EDITABLE_PRICE_SRC,
+            COL_FLAG,
+            COL_STATUS
+        ] + st.session_state.optional_columns
+
+        print("\n=== Column Configuration ===")
+        print(f"Configured column order: {column_order}")
+        
+        # Configure selection mode
+        gb.configure_selection(
+            selection_mode='multiple',
+            use_checkbox=True,
+            pre_selected_rows=[]
         )
+        
+        # Configure column order and formatting
+        for col in column_order:
+            if col in display_df.columns:
+                base_config = {
+                    'resizable': True,
+                    'cellStyle': {'textAlign': 'left'},
+                    'headerClass': 'ag-header-cell-left'
+                }
+                
+                if col == COL_DATE:
+                    gb.configure_column(col, 
+                        type=["dateColumnFilter", "customDateTimeFormat"],
+                        custom_format_string='YYYY-MM-DD',
+                        width=120,
+                        **base_config
+                    )
+                elif col in [COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_EDITABLE_PRICE_SRC]:
+                    gb.configure_column(col,
+                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        precision=2,
+                        valueFormatter="'$' + value.toFixed(2)",
+                        editable=(col == COL_EDITABLE_PRICE_SRC),
+                        width=130,
+                        **base_config
+                    )
+                elif col == COL_DELTA:
+                    gb.configure_column(col,
+                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        precision=1,
+                        valueFormatter="value.toFixed(1) + '%'",
+                        width=100,
+                        **base_config
+                    )
+                elif col in [COL_OCC_CURR, COL_OCC_HIST]:
+                    gb.configure_column(col,
+                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        precision=1,
+                        valueFormatter="value.toFixed(1) + '%'",
+                        width=110,
+                        **base_config
+                    )
+                elif col == COL_PACE:
+                    gb.configure_column(col,
+                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        precision=1,
+                        valueFormatter="value.toFixed(1)",
+                        width=100,
+                        **base_config
+                    )
+                elif col == COL_SELECT:
+                    gb.configure_column(col,
+                        width=50,
+                        headerCheckboxSelection=True,
+                        headerCheckboxSelectionFilteredOnly=True,
+                        checkboxSelection=True,
+                        pinned='left',
+                        **base_config
+                    )
+                elif col == '_id':
+                    gb.configure_column(col,
+                        width=80,
+                        **base_config
+                    )
+                elif col == COL_PROPERTY_SRC:
+                    gb.configure_column(col,
+                        width=200,
+                        **base_config
+                    )
+                elif col == COL_TIER:
+                    gb.configure_column(col,
+                        width=90,
+                        **base_config
+                    )
+                elif col == COL_DAY_OF_WEEK:
+                    gb.configure_column(col,
+                        width=120,
+                        **base_config
+                    )
+                else:
+                    gb.configure_column(col,
+                        width=120,
+                        **base_config
+                    )
+
+        # Configure grid options
+        gb.configure_grid_options(
+            domLayout='autoHeight',
+            enableCellTextSelection=True,
+            ensureDomOrder=True,
+            defaultColDef={
+                'resizable': True,
+                'sortable': True,
+                'filter': True,
+                'cellStyle': {'textAlign': 'center'},
+                'headerClass': 'ag-header-cell-center'
+            }
+        )
+
+        # Add custom CSS for center alignment
+        st.markdown("""
+        <style>
+        .ag-header-cell-center {
+            text-align: center !important;
+        }
+        .ag-cell {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Define columns that should be disabled from editing
+        disabled_cols = [
+            COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_CALCULATED_TIER_SRC, 
+            COL_DAY_OF_WEEK, COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_DELTA,
+            COL_FLAG, COL_OCC_CURR, COL_OCC_HIST, COL_PACE, COL_STATUS, '_id'
+        ] + [col for col in HIDDEN_COLS if col != '_id']  # Include hidden cols except _id
+
+        # Remove optional columns from disabled list if they're not selected
+        if COL_OCC_HIST not in st.session_state.optional_columns and COL_OCC_HIST in disabled_cols:
+            disabled_cols.remove(COL_OCC_HIST)
+        if COL_PACE not in st.session_state.optional_columns and COL_PACE in disabled_cols:
+            disabled_cols.remove(COL_PACE)
+
+        # Filter disabled_cols to only include those actually present in the DataFrame
+        disabled_cols = [col for col in disabled_cols if col in display_df.columns]
+
+        print("\n=== Grid Configuration ===")
+        print(f"Editable columns: {[col for col in display_df.columns if col not in disabled_cols]}")
+        print(f"Disabled columns: {disabled_cols}")
+
+        # Ensure Select column exists and is first
+        if COL_SELECT not in display_df.columns:
+            display_df.insert(0, COL_SELECT, False)
+        elif list(display_df.columns).index(COL_SELECT) != 0:
+            # If Select exists but is not first, reorder columns
+            cols = list(display_df.columns)
+            cols.remove(COL_SELECT)
+            display_df = display_df[[COL_SELECT] + cols]
+
+        # Simplify row IDs to sequential numbers
+        if '_id' in display_df.columns:
+            display_df = display_df.reset_index(drop=True)
+            display_df['_id'] = display_df.index
+            print("\n=== Row IDs ===")
+            print(f"Simplified row IDs: {display_df['_id'].tolist()}")
         
         grid_response = AgGrid(
             display_df,
@@ -430,78 +584,143 @@ with results_area:
             fit_columns_on_grid_load=True,
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             reload_data=False,
-            key='main_grid'
+            key='main_grid',
+            disabled=disabled_cols,
+            column_order=column_order
         )
 
         # Debug logging for selection state
         with st.expander("Debug Selection Info", expanded=False):
-            st.write("Grid Response Keys:", grid_response.keys() if isinstance(grid_response, dict) else "Not a dict")
-            st.write("Selected Rows Count:", len(grid_response['selected_rows']) if isinstance(grid_response, dict) and 'selected_rows' in grid_response else "No selection data")
-            st.write("Selection Model:", grid_response.get('selected_rows', []))
+            st.write("Grid Response Type:", type(grid_response))
+            print("\n=== Grid Response Debug ===")
+            print(f"Grid Response Type: {type(grid_response)}")
+            
+            if hasattr(grid_response, 'selected_rows'):
+                selected_df = pd.DataFrame(grid_response.selected_rows)
+                print("\n=== Selected Rows Data ===")
+                print(f"Selected DataFrame Shape: {selected_df.shape}")
+                print(f"Selected DataFrame Columns: {selected_df.columns.tolist()}")
+                print("\nFirst few rows of selected data:")
+                print(selected_df.head().to_string())
+                
+                st.write("Selected Rows DataFrame:", selected_df)
+                st.write("Selected Rows Shape:", selected_df.shape)
+                st.write("Selected Rows Columns:", selected_df.columns.tolist())
             st.write("Current Checkbox Selections:", st.session_state.checkbox_selections)
 
-        # Ensure grid_response is a dictionary and 'selected_rows' exists
-        if isinstance(grid_response, dict) and 'selected_rows' in grid_response:
-            selected_ids = [row[COL_ID] for row in grid_response['selected_rows']]
-            all_visible_ids = display_df[COL_ID].tolist()
-            update_selected_ids(selected_ids, all_visible_ids)
-        else:
-            selected_ids = []
-            st.warning("No rows selected or grid response is invalid.")
-
+        # Process selected rows - now handling as DataFrame
+        selected_df = pd.DataFrame(grid_response.selected_rows) if hasattr(grid_response, 'selected_rows') else pd.DataFrame()
+        
+        # Extract IDs from selected DataFrame
+        selected_ids = selected_df[COL_ID].tolist() if not selected_df.empty else []
+        print("\n=== Selected IDs ===")
+        print(f"Number of selected IDs: {len(selected_ids)}")
+        print(f"Selected IDs: {selected_ids}")
+        
+        # Update session state with current selections
+        st.session_state.selected_ids = set(selected_ids)
+        print(f"\nSession state selected_ids updated: {st.session_state.selected_ids}")
+        
         # Display selection summary
-        if selected_ids:
+        if not selected_df.empty:
             st.info(f"Selected {len(selected_ids)} rows")
-            # Create a summary DataFrame of selected rows
-            selected_df = pd.DataFrame(selected_ids)
-            if not selected_df.empty:
-                st.dataframe(
-                    selected_df[[COL_DATE, COL_PROPERTY_SRC, COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_EDITABLE_PRICE_SRC]],
-                    hide_index=True
-                )
+            display_columns = [COL_ID, COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_EDITABLE_PRICE_SRC]
+            valid_columns = [col for col in display_columns if col in selected_df.columns]
+            print("\n=== Display Columns ===")
+            print(f"Valid display columns: {valid_columns}")
+            edited_selection = st.data_editor(
+                selected_df[valid_columns],
+                hide_index=True,
+                disabled=[col for col in valid_columns if col != COL_EDITABLE_PRICE_SRC],
+                column_config={
+                    COL_ID: st.column_config.TextColumn("ID"),
+                    COL_LISTING_ID: st.column_config.TextColumn("Listing ID"),
+                    COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
+                    COL_PROPERTY_SRC: st.column_config.TextColumn("Property"),
+                    COL_LIVE_RATE: st.column_config.NumberColumn("Live Rate $", format="$%.2f"),
+                    COL_SUGGESTED_SRC: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f"),
+                    COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0)
+                }
+            )
+            
+            # Update the main dataframe with any edits made in the selection summary
+            if edited_selection is not None:
+                for idx, row in edited_selection.iterrows():
+                    row_id = row[COL_ID]
+                    new_editable_price = row[COL_EDITABLE_PRICE_SRC]
+                    mask = st.session_state.edited_rates_df[COL_ID] == row_id
+                    st.session_state.edited_rates_df.loc[mask, COL_EDITABLE_PRICE_SRC] = new_editable_price
 
         # Actions
         st.markdown("---")
         st.markdown("#### Actions")
         action_cols = st.columns(3)
         
+        # Pass the current dataframe to action handlers
+        current_action_df = st.session_state.edited_rates_df
+        
         with action_cols[0]:
             if st.button("Adjust Selected", key='adjust_button'):
-                if st.session_state.selected_ids:
-                    updates = [
-                        {COL_ID: row_id, COL_EDITABLE_PRICE_SRC: display_df.loc[display_df[COL_ID] == row_id, COL_EDITABLE_PRICE_SRC].values[0]}
-                        for row_id in st.session_state.selected_ids
-                    ]
-                    if updates:
-                        if backend_interface.update_rates(updates):
-                            st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
-                        else:
-                            st.error("Failed to log adjustments.")
+                if current_action_df is not None:
+                    # Get selected rows from grid response
+                    selected_for_action = pd.DataFrame(grid_response.selected_rows)
+                    if not selected_for_action.empty:
+                        updates = []
+                        for index, row in selected_for_action.iterrows():
+                            update = {
+                                COL_ID: row[COL_ID],
+                                COL_EDITABLE_PRICE_SRC: row[COL_EDITABLE_PRICE_SRC]
+                            }
+                            updates.append(update)
+                            print(f"Prepared update: {update}")
+                        
+                        if updates:
+                            if backend_interface.update_rates(updates):
+                                print("\nSuccessfully logged rate adjustments")
+                                st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
+                            else:
+                                print("\nFailed to log rate adjustments")
+                                st.error("Failed to log adjustments.")
                     else:
-                        st.warning("No valid rows selected for adjustment.")
+                        st.warning("No rows selected for adjustment.")
                 else:
-                    st.warning("No rows selected for adjustment.")
+                    st.warning("No data available to adjust.")
 
         with action_cols[1]:
             if st.button("Approve Selected", key='approve_button'):
-                if st.session_state.selected_ids:
-                    updates = [
-                        {COL_ID: row_id, COL_STATUS: 'Approved'}
-                        for row_id in st.session_state.selected_ids
-                    ]
-                    if updates:
-                        if backend_interface.update_rates(updates):
-                            st.toast(f"{len(updates)} rate approval(s) logged.", icon="👍")
-                            for row_id in st.session_state.selected_ids:
-                                idx = st.session_state.edited_rates_df[COL_ID] == row_id
-                                st.session_state.edited_rates_df.loc[idx, COL_STATUS] = 'Approved'
-                            st.rerun()
-                        else:
-                            st.error("Failed to log approvals.")
+                if current_action_df is not None:
+                    # Get selected rows from grid response
+                    selected_for_action = pd.DataFrame(grid_response.selected_rows)
+                    if not selected_for_action.empty:
+                        updates = []
+                        ids_to_update_locally = []
+                        for index, row in selected_for_action.iterrows():
+                            update = {
+                                COL_ID: row[COL_ID],
+                                COL_STATUS: 'Approved'
+                            }
+                            updates.append(update)
+                            ids_to_update_locally.append(row[COL_ID])
+                            print(f"Prepared update: {update}")
+                        
+                        if updates:
+                            if backend_interface.update_rates(updates):
+                                print("\nSuccessfully logged rate approvals")
+                                st.toast(f"{len(updates)} rate approval(s) logged.", icon="👍")
+                                # Update local state
+                                print(f"\nUpdating status for {len(ids_to_update_locally)} rows in main DataFrame")
+                                st.session_state.edited_rates_df.loc[
+                                    st.session_state.edited_rates_df[COL_ID].isin(ids_to_update_locally), 
+                                    COL_STATUS
+                                ] = 'Approved'
+                                st.rerun()
+                            else:
+                                print("\nFailed to log rate approvals")
+                                st.error("Failed to log approvals.")
                     else:
-                        st.warning("No valid rows selected for approval.")
+                        st.warning("No rows selected for approval.")
                 else:
-                    st.warning("No rows selected for approval.")
+                    st.warning("No data available to approve.")
 
         with action_cols[2]:
             if st.button("Push Approved Rates Live", key='push_button', type="secondary"):
@@ -520,7 +739,3 @@ with results_area:
 
     elif not st.session_state.generate_clicked and st.session_state.edited_rates_df is None:
         st.info("Configure parameters above and click 'Generate Rates' to begin.")
-
-# Add a button to clear selections
-if st.button("Clear Selections"):
-    st.session_state.selected_ids.clear() 
