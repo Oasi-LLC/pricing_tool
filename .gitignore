@@ -18,3 +18,4 @@ __pycache__/
 .Spotlight-V100
 .Trashes
 venv/
+*.log
