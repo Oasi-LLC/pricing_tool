@@ -5,7 +5,7 @@ import traceback
 import numpy as np
 from pathlib import Path
 import re
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode, ColumnsAutoSizeMode
 
 # Import backend interface functions
 from utils import backend_interface
@@ -17,34 +17,46 @@ st.set_page_config(layout="wide", page_title="Rate Review Tool")
 st.title("Internal Rate Review & Management Tool")
 
 # --- Constants for Column Names ---
-COL_SELECT = "Select"
-COL_DATE = "Date"
-COL_PROPERTY = "Property"
-COL_LISTING_ID = "listing_id"
-COL_LISTING_NAME = "Listing Name"
-COL_TIER = "Tier"
-COL_DAY_OF_WEEK = "Day of Week"
-COL_LIVE_RATE = "Live Rate $"
-COL_SUGGESTED = "Suggested Rate"
-COL_DELTA = "Delta"
-COL_EDITABLE_PRICE = "Editable Rate"
-COL_FLAG = "Flag"
-COL_OCC_CURR = "Occ% (Curr)"
+COL_SELECT = 'Select'
+COL_ID = '_id'
+COL_DATE = 'Date'
+COL_PROPERTY = 'Unit Pool'
+COL_LISTING_NAME = 'listing_name'
+COL_LISTING_ID = 'listing_id'
+COL_TIER = 'calculated_tier'
+COL_TIER_SRC = 'tier_group'
+COL_DAY_OF_WEEK = 'Day of Week'
+COL_LIVE_RATE = 'Live Rate $'
+COL_SUGGESTED = 'Suggested'
+COL_DELTA = 'Delta'
+COL_EDITABLE_PRICE = 'Editable Price'
+COL_FLAG = 'Flag'
+COL_STATUS = 'Status'
+COL_OCC_CURR = 'Occ% (Curr)'
 COL_OCC_HIST = "Occ% (Hist)"
 COL_PACE = "Pace"
-COL_STATUS = "Status"
-COL_ID = "_id"
 
 # Source column names
 COL_BASELINE_SRC = "Baseline"
 COL_SUGGESTED_SRC = "Suggested"
 COL_EDITABLE_PRICE_SRC = "Editable Price"
 COL_PROPERTY_SRC = "property"
-COL_TIER_SRC = "tier_group"
 COL_CALCULATED_TIER_SRC = "calculated_tier"
 
-# Hidden columns
-HIDDEN_COLS = [COL_ID, COL_LISTING_ID, COL_TIER_SRC, "day_group", "booking_window", "urgency_band", "lookup_error"]
+# Hidden columns (updated to include all columns we don't want to show)
+HIDDEN_COLS = [
+    'property',  # Hide 'property' since we're using 'Unit Pool'
+    'listing_id',
+    'tier_group',
+    'day_group',
+    'booking_window',
+    'urgency_band',
+    'lookup_error',
+    'date',  # Hide internal date column
+    'Baseline',
+    'Occ% (Hist)',
+    'Pace'
+]
 
 # Core visible columns
 CORE_COLS = [
@@ -53,8 +65,41 @@ CORE_COLS = [
     COL_FLAG, COL_STATUS
 ]
 
-# Optional columns
-OPTIONAL_COLS = [COL_OCC_HIST, COL_PACE]
+# Define the exact columns we want to show, in order
+DEFAULT_VISIBLE_COLUMNS = [
+    COL_SELECT,
+    COL_ID,
+    COL_DATE,
+    COL_PROPERTY,  # This is 'Unit Pool'
+    COL_LISTING_NAME,
+    COL_TIER,
+    COL_DAY_OF_WEEK,
+    COL_OCC_CURR,
+    COL_LIVE_RATE,
+    COL_SUGGESTED,
+    COL_DELTA,
+    COL_EDITABLE_PRICE,
+    COL_FLAG,
+    COL_STATUS
+]
+
+# Column display names mapping
+COLUMN_DISPLAY_NAMES = {
+    COL_SELECT: "Select",
+    COL_ID: "ID",
+    COL_DATE: "Date",
+    COL_PROPERTY: "Property",
+    COL_LISTING_NAME: "Listing Name",
+    COL_TIER: "Tier",
+    COL_DAY_OF_WEEK: "Day",
+    COL_OCC_CURR: "Occ% Current",
+    COL_LIVE_RATE: "Live Rate $",
+    COL_SUGGESTED: "Suggested Rate $",
+    COL_DELTA: "Delta %",
+    COL_EDITABLE_PRICE: "Editable Rate $",
+    COL_FLAG: "Flag",
+    COL_STATUS: "Status"
+}
 
 # --- Session State Initialization ---
 if 'selected_properties' not in st.session_state:
@@ -69,8 +114,6 @@ if 'generated_rates_df' not in st.session_state:
     st.session_state.generated_rates_df = None
 if 'edited_rates_df' not in st.session_state:
     st.session_state.edited_rates_df = None
-if 'optional_columns' not in st.session_state:
-    st.session_state.optional_columns = []
 if 'results_are_displayed' not in st.session_state:
     st.session_state.results_are_displayed = False
 if 'checkbox_selections' not in st.session_state:
@@ -205,14 +248,6 @@ with config_area:
             key='end_date_input'
         )
         
-    with st.expander("Display Options"):
-        st.session_state.optional_columns = st.multiselect(
-            "Select Optional Columns to Display:",
-            options=OPTIONAL_COLS,
-            default=st.session_state.optional_columns,
-            key='optional_cols_select'
-        )
-    
     if st.button("Generate Rates", key='generate_button', type="primary"):
         if not st.session_state.selected_properties:
             st.warning("Please select at least one property.")
@@ -323,10 +358,14 @@ with results_area:
         # Calculate derived columns first
         df = st.session_state.edited_rates_df.copy()
         
+        # Debug prints
+        print("\n=== Debug Information ===")
+        print("Original DataFrame Columns:", df.columns.tolist())
+        
         # Add Day of Week if not present
         if COL_DAY_OF_WEEK not in df.columns:
             df[COL_DAY_OF_WEEK] = pd.to_datetime(df[COL_DATE]).dt.strftime('%A')
-            
+        
         # Calculate Delta if not present
         if COL_DELTA not in df.columns:
             if COL_LIVE_RATE in df.columns and COL_SUGGESTED_SRC in df.columns:
@@ -339,7 +378,7 @@ with results_area:
                 )
             else:
                 df[COL_DELTA] = np.nan
-                
+        
         # Update the session state with derived columns
         st.session_state.edited_rates_df = df
 
@@ -393,127 +432,32 @@ with results_area:
         # Apply filters
         display_df = apply_filters(df, st.session_state)
 
+        # Reset index and use listing IDs
+        display_df = display_df.reset_index(drop=True)
+        display_df[COL_ID] = display_df[COL_LISTING_ID]  # Use listing_id as the ID
+
         # Ensure Select column exists and initialize with previous selections
         if COL_SELECT not in display_df.columns:
             display_df[COL_SELECT] = False
         if st.session_state.checkbox_selections:
             display_df[COL_SELECT] = display_df[COL_ID].map(st.session_state.checkbox_selections).fillna(False)
 
-        # Configure AgGrid
+        # Debug information about columns
+        print("\n=== Column Debug Information ===")
+        print("Default Visible Columns:", DEFAULT_VISIBLE_COLUMNS)
+        print("Actual Columns in DataFrame:", display_df.columns.tolist())
+        
+        # Configure grid options
         gb = GridOptionsBuilder.from_dataframe(display_df)
         
-        # Define column order to match original app.py
-        column_order = [
-            COL_SELECT,  # Ensure Select is first
-            '_id',       # Add ID column
-            COL_DATE,
-            COL_PROPERTY_SRC,
-            COL_TIER,
-            COL_DAY_OF_WEEK,
-            COL_OCC_CURR,
-            COL_LIVE_RATE,
-            COL_SUGGESTED_SRC,
-            COL_DELTA,
-            COL_EDITABLE_PRICE_SRC,
-            COL_FLAG,
-            COL_STATUS
-        ] + st.session_state.optional_columns
-
-        print("\n=== Column Configuration ===")
-        print(f"Configured column order: {column_order}")
-        
-        # Configure selection mode
+        # Configure selection mode first
         gb.configure_selection(
             selection_mode='multiple',
             use_checkbox=True,
             pre_selected_rows=[]
         )
-        
-        # Configure column order and formatting
-        for col in column_order:
-            if col in display_df.columns:
-                base_config = {
-                    'resizable': True,
-                    'cellStyle': {'textAlign': 'left'},
-                    'headerClass': 'ag-header-cell-left'
-                }
-                
-                if col == COL_DATE:
-                    gb.configure_column(col, 
-                        type=["dateColumnFilter", "customDateTimeFormat"],
-                        custom_format_string='YYYY-MM-DD',
-                        width=120,
-                        **base_config
-                    )
-                elif col in [COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_EDITABLE_PRICE_SRC]:
-                    gb.configure_column(col,
-                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
-                        precision=2,
-                        valueFormatter="'$' + value.toFixed(2)",
-                        editable=(col == COL_EDITABLE_PRICE_SRC),
-                        width=130,
-                        **base_config
-                    )
-                elif col == COL_DELTA:
-                    gb.configure_column(col,
-                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
-                        precision=1,
-                        valueFormatter="value.toFixed(1) + '%'",
-                        width=100,
-                        **base_config
-                    )
-                elif col in [COL_OCC_CURR, COL_OCC_HIST]:
-                    gb.configure_column(col,
-                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
-                        precision=1,
-                        valueFormatter="value.toFixed(1) + '%'",
-                        width=110,
-                        **base_config
-                    )
-                elif col == COL_PACE:
-                    gb.configure_column(col,
-                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
-                        precision=1,
-                        valueFormatter="value.toFixed(1)",
-                        width=100,
-                        **base_config
-                    )
-                elif col == COL_SELECT:
-                    gb.configure_column(col,
-                        width=50,
-                        headerCheckboxSelection=True,
-                        headerCheckboxSelectionFilteredOnly=True,
-                        checkboxSelection=True,
-                        pinned='left',
-                        **base_config
-                    )
-                elif col == '_id':
-                    gb.configure_column(col,
-                        width=80,
-                        **base_config
-                    )
-                elif col == COL_PROPERTY_SRC:
-                    gb.configure_column(col,
-                        width=200,
-                        **base_config
-                    )
-                elif col == COL_TIER:
-                    gb.configure_column(col,
-                        width=90,
-                        **base_config
-                    )
-                elif col == COL_DAY_OF_WEEK:
-                    gb.configure_column(col,
-                        width=120,
-                        **base_config
-                    )
-                else:
-                    gb.configure_column(col,
-                        width=120,
-                        **base_config
-                    )
 
-        # Configure grid options
+        # Configure default options
         gb.configure_grid_options(
             domLayout='autoHeight',
             enableCellTextSelection=True,
@@ -522,61 +466,125 @@ with results_area:
                 'resizable': True,
                 'sortable': True,
                 'filter': True,
-                'cellStyle': {'textAlign': 'center'},
-                'headerClass': 'ag-header-cell-center'
+                'cellStyle': {'textAlign': 'left'},
+                'headerClass': 'ag-header-cell-left',
+                'suppressMovable': True,
+                'lockPosition': True
             }
         )
 
-        # Add custom CSS for center alignment
-        st.markdown("""
-        <style>
-        .ag-header-cell-center {
-            text-align: center !important;
-        }
-        .ag-cell {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        # Configure columns in exact order
+        column_order = [
+            COL_SELECT,
+            COL_ID,
+            COL_DATE,
+            COL_PROPERTY,
+            COL_LISTING_NAME,
+            COL_TIER,
+            COL_DAY_OF_WEEK,
+            COL_OCC_CURR,
+            COL_LIVE_RATE,
+            COL_SUGGESTED,
+            COL_DELTA,
+            COL_EDITABLE_PRICE,
+            COL_FLAG,
+            COL_STATUS
+        ]
 
-        # Define columns that should be disabled from editing
-        disabled_cols = [
-            COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_CALCULATED_TIER_SRC, 
-            COL_DAY_OF_WEEK, COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_DELTA,
-            COL_FLAG, COL_OCC_CURR, COL_OCC_HIST, COL_PACE, COL_STATUS, '_id'
-        ] + [col for col in HIDDEN_COLS if col != '_id']  # Include hidden cols except _id
+        # First, hide all columns
+        for col in display_df.columns:
+            gb.configure_column(col, hide=True)
 
-        # Remove optional columns from disabled list if they're not selected
-        if COL_OCC_HIST not in st.session_state.optional_columns and COL_OCC_HIST in disabled_cols:
-            disabled_cols.remove(COL_OCC_HIST)
-        if COL_PACE not in st.session_state.optional_columns and COL_PACE in disabled_cols:
-            disabled_cols.remove(COL_PACE)
+        # Then configure visible columns in exact order with specific settings
+        for idx, col in enumerate(column_order):
+            if col in display_df.columns:
+                base_config = {
+                    'resizable': True,
+                    'cellStyle': {'textAlign': 'left'},
+                    'headerClass': 'ag-header-cell-left',
+                    'headerName': COLUMN_DISPLAY_NAMES.get(col, col),
+                    'hide': False,
+                    'suppressMovable': True,
+                    'lockPosition': True,
+                    'sortIndex': idx
+                }
+                
+                print(f"Configuring grid column: {col} -> {COLUMN_DISPLAY_NAMES.get(col, col)}")
+                
+                if col == COL_DATE:
+                    gb.configure_column(
+                        col,
+                        type=["dateColumnFilter", "customDateTimeFormat"],
+                        custom_format_string='YYYY-MM-DD',
+                        width=120,
+                        editable=False,
+                        **base_config
+                    )
+                elif col in [COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE]:
+                    gb.configure_column(
+                        col,
+                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        precision=2,
+                        valueFormatter="'$' + value.toFixed(2)",
+                        editable=(col == COL_EDITABLE_PRICE),
+                        width=130,
+                        **base_config
+                    )
+                elif col == COL_DELTA:
+                    gb.configure_column(
+                        col,
+                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        precision=1,
+                        valueFormatter="value.toFixed(1) + '%'",
+                        width=100,
+                        editable=False,
+                        **base_config
+                    )
+                elif col == COL_OCC_CURR:
+                    gb.configure_column(
+                        col,
+                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        precision=1,
+                        valueFormatter="value.toFixed(1) + '%'",
+                        width=110,
+                        editable=False,
+                        **base_config
+                    )
+                elif col == COL_SELECT:
+                    gb.configure_column(
+                        col,
+                        width=50,
+                        headerCheckboxSelection=True,
+                        headerCheckboxSelectionFilteredOnly=True,
+                        checkboxSelection=True,
+                        pinned='left',
+                        editable=False,
+                        **base_config
+                    )
+                elif col == COL_ID:
+                    gb.configure_column(
+                        col,
+                        width=200,  # Wider column for listing IDs
+                        type=["textColumn"],  # Change to text type for listing IDs
+                        editable=False,
+                        **{**base_config, 'hide': False}
+                    )
+                elif col in [COL_PROPERTY, COL_LISTING_NAME]:
+                    gb.configure_column(
+                        col,
+                        width=200,
+                        editable=False,
+                        **base_config
+                    )
+                else:
+                    gb.configure_column(
+                        col,
+                        width=120,
+                        editable=False,
+                        **base_config
+                    )
 
-        # Filter disabled_cols to only include those actually present in the DataFrame
-        disabled_cols = [col for col in disabled_cols if col in display_df.columns]
-
-        print("\n=== Grid Configuration ===")
-        print(f"Editable columns: {[col for col in display_df.columns if col not in disabled_cols]}")
-        print(f"Disabled columns: {disabled_cols}")
-
-        # Ensure Select column exists and is first
-        if COL_SELECT not in display_df.columns:
-            display_df.insert(0, COL_SELECT, False)
-        elif list(display_df.columns).index(COL_SELECT) != 0:
-            # If Select exists but is not first, reorder columns
-            cols = list(display_df.columns)
-            cols.remove(COL_SELECT)
-            display_df = display_df[[COL_SELECT] + cols]
-
-        # Simplify row IDs to sequential numbers
-        if '_id' in display_df.columns:
-            display_df = display_df.reset_index(drop=True)
-            display_df['_id'] = display_df.index
-            print("\n=== Row IDs ===")
-            print(f"Simplified row IDs: {display_df['_id'].tolist()}")
-        
+        # Create grid with filtered columns and proper configuration
         grid_response = AgGrid(
             display_df,
             gridOptions=gb.build(),
@@ -585,9 +593,25 @@ with results_area:
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             reload_data=False,
             key='main_grid',
-            disabled=disabled_cols,
-            column_order=column_order
+            columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+            allow_unsafe_jscode=True,
+            custom_css={
+                ".ag-header-cell-label": {"justify-content": "left !important"},
+                ".ag-cell": {"padding-left": "5px !important"}
+            }
         )
+
+        # Add custom CSS for column alignment
+        st.markdown("""
+        <style>
+        .ag-theme-streamlit .ag-header-cell-label {
+            justify-content: left !important;
+        }
+        .ag-theme-streamlit .ag-cell {
+            padding-left: 5px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
         # Debug logging for selection state
         with st.expander("Debug Selection Info", expanded=False):
@@ -608,7 +632,7 @@ with results_area:
                 st.write("Selected Rows Columns:", selected_df.columns.tolist())
             st.write("Current Checkbox Selections:", st.session_state.checkbox_selections)
 
-        # Process selected rows - now handling as DataFrame
+        # Process selected rows
         selected_df = pd.DataFrame(grid_response.selected_rows) if hasattr(grid_response, 'selected_rows') else pd.DataFrame()
         
         # Extract IDs from selected DataFrame
@@ -624,7 +648,7 @@ with results_area:
         # Display selection summary
         if not selected_df.empty:
             st.info(f"Selected {len(selected_ids)} rows")
-            display_columns = [COL_ID, COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_EDITABLE_PRICE_SRC]
+            display_columns = [COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_EDITABLE_PRICE_SRC]
             valid_columns = [col for col in display_columns if col in selected_df.columns]
             print("\n=== Display Columns ===")
             print(f"Valid display columns: {valid_columns}")
@@ -634,9 +658,9 @@ with results_area:
                 disabled=[col for col in valid_columns if col != COL_EDITABLE_PRICE_SRC],
                 column_config={
                     COL_ID: st.column_config.TextColumn("ID"),
-                    COL_LISTING_ID: st.column_config.TextColumn("Listing ID"),
                     COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
                     COL_PROPERTY_SRC: st.column_config.TextColumn("Property"),
+                    COL_LISTING_NAME: st.column_config.TextColumn("Listing Name"),
                     COL_LIVE_RATE: st.column_config.NumberColumn("Live Rate $", format="$%.2f"),
                     COL_SUGGESTED_SRC: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f"),
                     COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0)
@@ -645,8 +669,8 @@ with results_area:
             
             # Update the main dataframe with any edits made in the selection summary
             if edited_selection is not None:
-                for idx, row in edited_selection.iterrows():
-                    row_id = row[COL_ID]
+                for _, row in edited_selection.iterrows():
+                    row_id = row[COL_ID]  # Get ID from the row
                     new_editable_price = row[COL_EDITABLE_PRICE_SRC]
                     mask = st.session_state.edited_rates_df[COL_ID] == row_id
                     st.session_state.edited_rates_df.loc[mask, COL_EDITABLE_PRICE_SRC] = new_editable_price
