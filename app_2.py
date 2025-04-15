@@ -120,6 +120,8 @@ if 'checkbox_selections' not in st.session_state:
     st.session_state.checkbox_selections = {}
 if 'selected_ids' not in st.session_state:
     st.session_state.selected_ids = set()
+if 'initial_load_complete' not in st.session_state:
+    st.session_state.initial_load_complete = False
 
 # Filter defaults
 filter_defaults = {
@@ -156,9 +158,20 @@ def clear_all_filter_states():
         st.session_state[key] = default_value
 
 def update_editable_rate_source():
-    toggle_value = st.session_state.get('rate_source_toggle', 'Use Live Rate')
-    new_source_col_name = COL_LIVE_RATE if toggle_value == 'Use Live Rate' else COL_SUGGESTED_SRC
-    st.session_state.active_rate_source_col = new_source_col_name
+    """Update editable rate values based on selected source"""
+    if st.session_state.base_data is not None:
+        toggle_value = st.session_state.get('rate_source_toggle', 'Use Live Rate')
+        source_col = COL_LIVE_RATE if toggle_value == 'Use Live Rate' else COL_SUGGESTED
+        
+        if source_col in st.session_state.base_data.columns:
+            # Update editable price with values from selected source
+            st.session_state.base_data[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(
+                st.session_state.base_data[source_col], 
+                errors='coerce'
+            ).fillna(0.0)
+            update_filtered_data()
+        else:
+            st.error(f"Source column '{source_col}' not found in data")
 
 def apply_filters(df, filter_state):
     if df is None or df.empty:
@@ -208,6 +221,142 @@ def update_selected_ids(new_ids, all_visible_ids):
     current.update(to_add)
     current.difference_update(to_remove)
     st.session_state.selected_ids = current
+
+# Modify the caching and data loading functions
+@st.cache_data
+def load_and_prepare_data(property_selection, start_date, end_date):
+    """Load and prepare data with proper initialization before caching"""
+    # Load initial data
+    generated_df = backend_interface.trigger_rate_generation(
+        property_selection=property_selection,
+        start_date=start_date,
+        end_date=end_date
+    )
+    
+    if generated_df is not None and not generated_df.empty:
+        # Process live rates
+        all_live_rates_dfs = []
+        for prop_name in property_selection:
+            live_df = process_live_rates(prop_name)
+            if live_df is not None:
+                all_live_rates_dfs.append(live_df)
+        
+        # Merge live rates
+        if all_live_rates_dfs:
+            combined_live_rates_df = pd.concat(all_live_rates_dfs, ignore_index=True)
+            if not pd.api.types.is_string_dtype(generated_df[COL_DATE]):
+                generated_df[COL_DATE] = pd.to_datetime(generated_df[COL_DATE]).dt.strftime('%Y-%m-%d')
+            
+            merged_df = pd.merge(
+                generated_df,
+                combined_live_rates_df,
+                left_on=[COL_LISTING_ID, COL_DATE],
+                right_on=['listing_id', 'date'],
+                how='left',
+                suffixes=('', '_live')
+            )
+            
+            # Ensure proper column names
+            if 'price' in merged_df.columns:
+                merged_df.rename(columns={'price': COL_LIVE_RATE}, inplace=True)
+            if COL_LIVE_RATE not in merged_df.columns:
+                merged_df[COL_LIVE_RATE] = 0.0
+            if COL_SUGGESTED not in merged_df.columns and 'Suggested' in merged_df.columns:
+                merged_df.rename(columns={'Suggested': COL_SUGGESTED}, inplace=True)
+        else:
+            merged_df = generated_df.copy()
+            merged_df[COL_LIVE_RATE] = 0.0
+        
+        # Initialize editable price with live rate by default
+        if COL_EDITABLE_PRICE_SRC not in merged_df.columns:
+            merged_df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(merged_df[COL_LIVE_RATE], errors='coerce').fillna(0.0)
+        
+        # Calculate all derived columns
+        merged_df = calculate_derived_columns(merged_df)
+        
+        return merged_df
+    
+    return None
+
+@st.cache_data
+def process_live_rates(property_name):
+    """Cache live rates loading per property"""
+    live_rates_filename = f"{property_name}_nightly_pulled_overrides.csv"
+    live_rates_path = Path("data") / property_name / live_rates_filename
+    if live_rates_path.exists():
+        try:
+            return pd.read_csv(
+                live_rates_path,
+                usecols=['listing_id', 'date', 'price'],
+                dtype={'listing_id': str, 'date': str, 'price': float}
+            )
+        except Exception as e:
+            st.warning(f"Could not load live rates for {property_name}: {e}")
+    return None
+
+def calculate_derived_columns(df):
+    """Calculate derived columns for the dataframe"""
+    if df is None or df.empty:
+        return df
+        
+    df = df.copy()
+    
+    # Add Day of Week if not present
+    if COL_DAY_OF_WEEK not in df.columns:
+        df[COL_DAY_OF_WEEK] = pd.to_datetime(df[COL_DATE]).dt.strftime('%A')
+    
+    # Calculate Delta if not present
+    if COL_DELTA not in df.columns:
+        if COL_LIVE_RATE in df.columns and COL_SUGGESTED in df.columns:
+            live_rate = pd.to_numeric(df[COL_LIVE_RATE], errors='coerce').fillna(0.0)
+            suggested = pd.to_numeric(df[COL_SUGGESTED], errors='coerce')
+            df[COL_DELTA] = np.where(
+                live_rate != 0,
+                ((suggested - live_rate) / live_rate) * 100,
+                np.nan
+            )
+        else:
+            df[COL_DELTA] = np.nan
+    
+    # Initialize Editable Price based on current toggle state
+    if COL_EDITABLE_PRICE_SRC not in df.columns:
+        toggle_value = st.session_state.get('rate_source_toggle', 'Use Live Rate')
+        source_col = COL_LIVE_RATE if toggle_value == 'Use Live Rate' else COL_SUGGESTED
+        if source_col in df.columns:
+            df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(df[source_col], errors='coerce').fillna(0.0)
+        else:
+            print(f"[DEBUG] Source column {source_col} not found. Available columns: {df.columns.tolist()}")
+            df[COL_EDITABLE_PRICE_SRC] = 0.0
+            
+    return df
+
+def initialize_session_state():
+    """Initialize all session state variables"""
+    if 'base_data' not in st.session_state:
+        st.session_state.base_data = None
+    if 'filtered_data' not in st.session_state:
+        st.session_state.filtered_data = None
+    if 'display_data' not in st.session_state:
+        st.session_state.display_data = None
+    if 'filter_state' not in st.session_state:
+        st.session_state.filter_state = {}
+    if 'data_loaded' not in st.session_state:
+        st.session_state.data_loaded = False
+
+def update_filtered_data():
+    """Update filtered data based on current filter state"""
+    if st.session_state.base_data is not None:
+        st.session_state.filtered_data = apply_filters(
+            st.session_state.base_data,
+            st.session_state.filter_state
+        )
+
+def on_filter_change():
+    """Callback for filter changes"""
+    update_filtered_data()
+
+# Initialize session state
+initialize_session_state()
 
 # --- Main App Structure ---
 st.write("Configure parameters and generate rates to begin the review process.")
@@ -267,121 +416,39 @@ with config_area:
 
 # --- Results Area ---
 with results_area:
-    if st.session_state.generate_clicked:
+    if st.session_state.generate_clicked and not st.session_state.data_loaded:
         st.subheader("2. Review & Manage Rates")
         try:
-            with st.spinner("Generating rates..."):
-                generated_df = backend_interface.trigger_rate_generation(
-                    property_selection=st.session_state.selected_properties,
-                    start_date=st.session_state.start_date,
-                    end_date=st.session_state.end_date
+            with st.spinner("Loading data..."):
+                # Load and prepare data with caching
+                prepared_df = load_and_prepare_data(
+                    st.session_state.selected_properties,
+                    st.session_state.start_date,
+                    st.session_state.end_date
                 )
-
-            st.session_state.generated_rates_df = generated_df
-            
-            if generated_df is not None and not generated_df.empty:
-                # Live rate data merge
-                merged_df = None
-                all_live_rates_dfs = []
-                properties_in_data = generated_df[COL_PROPERTY_SRC].unique()
                 
-                for prop_name in properties_in_data:
-                    live_rates_filename = f"{prop_name}_nightly_pulled_overrides.csv"
-                    live_rates_path = Path("data") / prop_name / live_rates_filename
-                    if live_rates_path.exists():
-                        try:
-                            live_df = pd.read_csv(
-                                live_rates_path,
-                                usecols=['listing_id', 'date', 'price'],
-                                dtype={'listing_id': str, 'date': str, 'price': float}
-                            )
-                            live_df['date'] = pd.to_datetime(live_df['date']).dt.strftime('%Y-%m-%d')
-                            all_live_rates_dfs.append(live_df)
-                        except Exception as e:
-                            st.warning(f"Could not load or process live rates file for {prop_name}: {e}")
-                    else:
-                        st.warning(f"Live rates file not found for {prop_name}: {live_rates_path}")
-                
-                if all_live_rates_dfs:
-                    combined_live_rates_df = pd.concat(all_live_rates_dfs, ignore_index=True)
-                    if not pd.api.types.is_string_dtype(generated_df[COL_DATE]):
-                        generated_df[COL_DATE] = pd.to_datetime(generated_df[COL_DATE]).dt.strftime('%Y-%m-%d')
-                    
-                    merged_df = pd.merge(
-                        generated_df,
-                        combined_live_rates_df,
-                        left_on=[COL_LISTING_ID, COL_DATE],
-                        right_on=['listing_id', 'date'],
-                        how='left',
-                        suffixes=('', '_live')
-                    )
-                    
-                    merged_df.rename(columns={'price': COL_LIVE_RATE}, inplace=True)
-                    if COL_LIVE_RATE not in merged_df.columns:
-                        merged_df[COL_LIVE_RATE] = 0.0
-                    else:
-                        merged_df[COL_LIVE_RATE] = pd.to_numeric(merged_df[COL_LIVE_RATE], errors='coerce').fillna(0.0)
+                if prepared_df is not None:
+                    # Store in session state
+                    st.session_state.base_data = prepared_df.copy()
+                    st.session_state.data_loaded = True
+                    st.session_state.initial_load_complete = False  # Reset for new data load
+                    update_filtered_data()
+                    st.success("Data loaded successfully!")
+                    st.rerun()  # Force a rerun to ensure proper grid initialization
                 else:
-                    st.warning("No live rate data loaded. 'Live Rate $' column will be set to $0.00.")
-                    merged_df = generated_df.copy()
-                    merged_df[COL_LIVE_RATE] = 0.0
+                    st.error("No data was generated. Please check your parameters.")
                 
-                # Initialize Editable Rate Column
-                if not st.session_state.get('editable_rate_initialized', False):
-                    initial_source_col = COL_LIVE_RATE
-                    if initial_source_col in merged_df.columns:
-                        if COL_EDITABLE_PRICE_SRC not in merged_df.columns:
-                            st.info(f"Initializing '{COL_EDITABLE_PRICE_SRC}' based on default '{initial_source_col}'.")
-                        merged_df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(merged_df[initial_source_col], errors='coerce').fillna(0.0)
-                        st.session_state.editable_rate_initialized = True
-                    else:
-                        st.warning(f"Default source column '{initial_source_col}' not found. Cannot initialize Editable Rate.")
-                        if COL_EDITABLE_PRICE_SRC not in merged_df.columns:
-                            merged_df[COL_EDITABLE_PRICE_SRC] = 0.0
-
-                st.session_state.edited_rates_df = merged_df.copy()
-                st.session_state.results_are_displayed = True
-
-            elif st.session_state.generate_clicked:
-                st.error("Failed to generate rates or no data found for the selected parameters.")
-                st.session_state.edited_rates_df = None
-                st.session_state.results_are_displayed = False
-
         except Exception as e:
-            st.error(f"An error occurred during rate generation: {e}")
+            st.error(f"An error occurred: {e}")
             st.exception(e)
-            st.session_state.edited_rates_df = None
-            st.session_state.results_are_displayed = False
-            st.session_state.generate_clicked = False
+            st.session_state.data_loaded = False
+            st.session_state.base_data = None
 
-    if st.session_state.results_are_displayed and st.session_state.edited_rates_df is not None:
-        # Calculate derived columns first
-        df = st.session_state.edited_rates_df.copy()
-        
-        # Debug prints
-        print("\n=== Debug Information ===")
-        print("Original DataFrame Columns:", df.columns.tolist())
-        
-        # Add Day of Week if not present
-        if COL_DAY_OF_WEEK not in df.columns:
-            df[COL_DAY_OF_WEEK] = pd.to_datetime(df[COL_DATE]).dt.strftime('%A')
-        
-        # Calculate Delta if not present
-        if COL_DELTA not in df.columns:
-            if COL_LIVE_RATE in df.columns and COL_SUGGESTED_SRC in df.columns:
-                live_rate = pd.to_numeric(df[COL_LIVE_RATE], errors='coerce').fillna(0.0)
-                suggested = pd.to_numeric(df[COL_SUGGESTED_SRC], errors='coerce')
-                df[COL_DELTA] = np.where(
-                    live_rate != 0,
-                    ((suggested - live_rate) / live_rate) * 100,
-                    np.nan
-                )
-            else:
-                df[COL_DELTA] = np.nan
-        
-        # Update the session state with derived columns
-        st.session_state.edited_rates_df = df
+    elif not st.session_state.generate_clicked and st.session_state.base_data is None:
+        st.info("Configure parameters above and click 'Generate Rates' to begin.")
 
+    # Display area - use cached data
+    if st.session_state.data_loaded and st.session_state.base_data is not None:
         # Rate source toggle
         st.radio(
             "Set Initial Value for Editable Rate $",
@@ -390,47 +457,58 @@ with results_area:
             horizontal=True,
             on_change=update_editable_rate_source
         )
-        st.markdown("---")
-
-        # Filters
+        
+        # Add immediate update if toggle changes
+        if 'previous_toggle_value' not in st.session_state:
+            st.session_state.previous_toggle_value = st.session_state.rate_source_toggle
+        elif st.session_state.previous_toggle_value != st.session_state.rate_source_toggle:
+            update_editable_rate_source()
+            st.session_state.previous_toggle_value = st.session_state.rate_source_toggle
+        
+        # Filters with callbacks
         with st.expander("Filter Displayed Rates", expanded=True):
             filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
             
             with filter_col1:
-                st.date_input("Filter Start Date", key='filter_start_date')
-                st.date_input("Filter End Date", key='filter_end_date')
+                st.date_input("Filter Start Date", key='filter_start_date', on_change=on_filter_change)
+                st.date_input("Filter End Date", key='filter_end_date', on_change=on_filter_change)
                 st.multiselect("Filter Properties", 
-                             options=sorted(df[COL_PROPERTY_SRC].unique()),
-                             key='filter_properties')
+                             options=sorted(st.session_state.base_data[COL_PROPERTY_SRC].unique()),
+                             key='filter_properties',
+                             on_change=on_filter_change)
                 st.multiselect("Filter Tiers", 
-                             options=sorted(df[COL_CALCULATED_TIER_SRC].unique(), key=natural_sort_key_tier),
-                             key='filter_tiers')
+                             options=sorted(st.session_state.base_data[COL_CALCULATED_TIER_SRC].unique(), key=natural_sort_key_tier),
+                             key='filter_tiers',
+                             on_change=on_filter_change)
             
             with filter_col2:
                 st.multiselect("Filter Day of Week", 
-                             options=sorted(df[COL_DAY_OF_WEEK].unique()),
-                             key='filter_dow')
+                             options=sorted(st.session_state.base_data[COL_DAY_OF_WEEK].unique()),
+                             key='filter_dow',
+                             on_change=on_filter_change)
                 st.multiselect("Filter Flags", 
-                             options=sorted(df[COL_FLAG].unique()),
-                             key='filter_flags')
+                             options=sorted(st.session_state.base_data[COL_FLAG].unique()),
+                             key='filter_flags',
+                             on_change=on_filter_change)
                 st.multiselect("Filter Status", 
-                             options=sorted(df[COL_STATUS].unique()),
-                             key='filter_statuses')
+                             options=sorted(st.session_state.base_data[COL_STATUS].unique()),
+                             key='filter_statuses',
+                             on_change=on_filter_change)
             
             with filter_col3:
-                st.number_input("Min Occ% (Curr)", key='filter_min_occ', step=0.1, format="%.1f")
-                st.number_input("Max Occ% (Curr)", key='filter_max_occ', step=0.1, format="%.1f")
-                st.number_input("Min Live Rate $", key='filter_min_live_rate', step=0.01, format="%.2f")
-                st.number_input("Max Live Rate $", key='filter_max_live_rate', step=0.01, format="%.2f")
+                st.number_input("Min Occ% (Curr)", key='filter_min_occ', step=0.1, format="%.1f", on_change=on_filter_change)
+                st.number_input("Max Occ% (Curr)", key='filter_max_occ', step=0.1, format="%.1f", on_change=on_filter_change)
+                st.number_input("Min Live Rate $", key='filter_min_live_rate', step=0.01, format="%.2f", on_change=on_filter_change)
+                st.number_input("Max Live Rate $", key='filter_max_live_rate', step=0.01, format="%.2f", on_change=on_filter_change)
             
             with filter_col4:
-                st.number_input("Min Delta %", key='filter_min_delta', step=0.1, format="%.1f")
-                st.number_input("Max Delta %", key='filter_max_delta', step=0.1, format="%.1f")
+                st.number_input("Min Delta %", key='filter_min_delta', step=0.1, format="%.1f", on_change=on_filter_change)
+                st.number_input("Max Delta %", key='filter_max_delta', step=0.1, format="%.1f", on_change=on_filter_change)
                 st.markdown("<br/>", unsafe_allow_html=True)
                 st.button("Clear All Filters", key="clear_filters_m2_cb", on_click=clear_all_filter_states)
 
         # Apply filters
-        display_df = apply_filters(df, st.session_state)
+        display_df = st.session_state.filtered_data
 
         # Reset index and use listing IDs
         display_df = display_df.reset_index(drop=True)
@@ -442,11 +520,6 @@ with results_area:
         if st.session_state.checkbox_selections:
             display_df[COL_SELECT] = display_df[COL_ID].map(st.session_state.checkbox_selections).fillna(False)
 
-        # Debug information about columns
-        print("\n=== Column Debug Information ===")
-        print("Default Visible Columns:", DEFAULT_VISIBLE_COLUMNS)
-        print("Actual Columns in DataFrame:", display_df.columns.tolist())
-        
         # Configure grid options
         gb = GridOptionsBuilder.from_dataframe(display_df)
         
@@ -509,8 +582,6 @@ with results_area:
                     'sortIndex': idx
                 }
                 
-                print(f"Configuring grid column: {col} -> {COLUMN_DISPLAY_NAMES.get(col, col)}")
-                
                 if col == COL_DATE:
                     gb.configure_column(
                         col,
@@ -564,8 +635,8 @@ with results_area:
                 elif col == COL_ID:
                     gb.configure_column(
                         col,
-                        width=200,  # Wider column for listing IDs
-                        type=["textColumn"],  # Change to text type for listing IDs
+                        width=200,
+                        type=["textColumn"],
                         editable=False,
                         **{**base_config, 'hide': False}
                     )
@@ -585,14 +656,15 @@ with results_area:
                     )
 
         # Create grid with filtered columns and proper configuration
+        grid_key = 'main_grid_' + ('initial' if not st.session_state.initial_load_complete else 'updated')
         grid_response = AgGrid(
             display_df,
             gridOptions=gb.build(),
             update_mode=GridUpdateMode.MODEL_CHANGED | GridUpdateMode.SELECTION_CHANGED,
             fit_columns_on_grid_load=True,
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-            reload_data=False,
-            key='main_grid',
+            reload_data=not st.session_state.initial_load_complete,  # Force reload on initial load
+            key=grid_key,
             columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
             allow_unsafe_jscode=True,
             custom_css={
@@ -600,6 +672,11 @@ with results_area:
                 ".ag-cell": {"padding-left": "5px !important"}
             }
         )
+
+        # Update initial load flag after grid is created
+        if not st.session_state.initial_load_complete:
+            st.session_state.initial_load_complete = True
+            st.rerun()  # Force one rerun after initial load to ensure proper rendering
 
         # Add custom CSS for column alignment
         st.markdown("""
@@ -613,45 +690,20 @@ with results_area:
         </style>
         """, unsafe_allow_html=True)
 
-        # Debug logging for selection state
-        with st.expander("Debug Selection Info", expanded=False):
-            st.write("Grid Response Type:", type(grid_response))
-            print("\n=== Grid Response Debug ===")
-            print(f"Grid Response Type: {type(grid_response)}")
-            
-            if hasattr(grid_response, 'selected_rows'):
-                selected_df = pd.DataFrame(grid_response.selected_rows)
-                print("\n=== Selected Rows Data ===")
-                print(f"Selected DataFrame Shape: {selected_df.shape}")
-                print(f"Selected DataFrame Columns: {selected_df.columns.tolist()}")
-                print("\nFirst few rows of selected data:")
-                print(selected_df.head().to_string())
-                
-                st.write("Selected Rows DataFrame:", selected_df)
-                st.write("Selected Rows Shape:", selected_df.shape)
-                st.write("Selected Rows Columns:", selected_df.columns.tolist())
-            st.write("Current Checkbox Selections:", st.session_state.checkbox_selections)
-
         # Process selected rows
         selected_df = pd.DataFrame(grid_response.selected_rows) if hasattr(grid_response, 'selected_rows') else pd.DataFrame()
         
         # Extract IDs from selected DataFrame
         selected_ids = selected_df[COL_ID].tolist() if not selected_df.empty else []
-        print("\n=== Selected IDs ===")
-        print(f"Number of selected IDs: {len(selected_ids)}")
-        print(f"Selected IDs: {selected_ids}")
         
         # Update session state with current selections
         st.session_state.selected_ids = set(selected_ids)
-        print(f"\nSession state selected_ids updated: {st.session_state.selected_ids}")
         
         # Display selection summary
         if not selected_df.empty:
             st.info(f"Selected {len(selected_ids)} rows")
-            display_columns = [COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED_SRC, COL_EDITABLE_PRICE_SRC]
+            display_columns = [COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE_SRC]
             valid_columns = [col for col in display_columns if col in selected_df.columns]
-            print("\n=== Display Columns ===")
-            print(f"Valid display columns: {valid_columns}")
             edited_selection = st.data_editor(
                 selected_df[valid_columns],
                 hide_index=True,
@@ -662,7 +714,7 @@ with results_area:
                     COL_PROPERTY_SRC: st.column_config.TextColumn("Property"),
                     COL_LISTING_NAME: st.column_config.TextColumn("Listing Name"),
                     COL_LIVE_RATE: st.column_config.NumberColumn("Live Rate $", format="$%.2f"),
-                    COL_SUGGESTED_SRC: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f"),
+                    COL_SUGGESTED: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f"),
                     COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0)
                 }
             )
@@ -670,10 +722,10 @@ with results_area:
             # Update the main dataframe with any edits made in the selection summary
             if edited_selection is not None:
                 for _, row in edited_selection.iterrows():
-                    row_id = row[COL_ID]  # Get ID from the row
+                    row_id = row[COL_ID]
                     new_editable_price = row[COL_EDITABLE_PRICE_SRC]
-                    mask = st.session_state.edited_rates_df[COL_ID] == row_id
-                    st.session_state.edited_rates_df.loc[mask, COL_EDITABLE_PRICE_SRC] = new_editable_price
+                    mask = st.session_state.base_data[COL_ID] == row_id
+                    st.session_state.base_data.loc[mask, COL_EDITABLE_PRICE_SRC] = new_editable_price
 
         # Actions
         st.markdown("---")
@@ -681,12 +733,11 @@ with results_area:
         action_cols = st.columns(3)
         
         # Pass the current dataframe to action handlers
-        current_action_df = st.session_state.edited_rates_df
+        current_action_df = st.session_state.base_data
         
         with action_cols[0]:
             if st.button("Adjust Selected", key='adjust_button'):
                 if current_action_df is not None:
-                    # Get selected rows from grid response
                     selected_for_action = pd.DataFrame(grid_response.selected_rows)
                     if not selected_for_action.empty:
                         updates = []
@@ -696,14 +747,11 @@ with results_area:
                                 COL_EDITABLE_PRICE_SRC: row[COL_EDITABLE_PRICE_SRC]
                             }
                             updates.append(update)
-                            print(f"Prepared update: {update}")
                         
                         if updates:
                             if backend_interface.update_rates(updates):
-                                print("\nSuccessfully logged rate adjustments")
                                 st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
                             else:
-                                print("\nFailed to log rate adjustments")
                                 st.error("Failed to log adjustments.")
                     else:
                         st.warning("No rows selected for adjustment.")
@@ -713,7 +761,6 @@ with results_area:
         with action_cols[1]:
             if st.button("Approve Selected", key='approve_button'):
                 if current_action_df is not None:
-                    # Get selected rows from grid response
                     selected_for_action = pd.DataFrame(grid_response.selected_rows)
                     if not selected_for_action.empty:
                         updates = []
@@ -725,21 +772,17 @@ with results_area:
                             }
                             updates.append(update)
                             ids_to_update_locally.append(row[COL_ID])
-                            print(f"Prepared update: {update}")
                         
                         if updates:
                             if backend_interface.update_rates(updates):
-                                print("\nSuccessfully logged rate approvals")
                                 st.toast(f"{len(updates)} rate approval(s) logged.", icon="👍")
                                 # Update local state
-                                print(f"\nUpdating status for {len(ids_to_update_locally)} rows in main DataFrame")
-                                st.session_state.edited_rates_df.loc[
-                                    st.session_state.edited_rates_df[COL_ID].isin(ids_to_update_locally), 
+                                st.session_state.base_data.loc[
+                                    st.session_state.base_data[COL_ID].isin(ids_to_update_locally), 
                                     COL_STATUS
                                 ] = 'Approved'
                                 st.rerun()
                             else:
-                                print("\nFailed to log rate approvals")
                                 st.error("Failed to log approvals.")
                     else:
                         st.warning("No rows selected for approval.")
@@ -760,6 +803,3 @@ with results_area:
                                 st.error("Failed to push rates live.")
                 else:
                     st.warning("No rates currently marked as 'Approved' to push.")
-
-    elif not st.session_state.generate_clicked and st.session_state.edited_rates_df is None:
-        st.info("Configure parameters above and click 'Generate Rates' to begin.")
