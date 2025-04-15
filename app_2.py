@@ -122,6 +122,12 @@ if 'selected_ids' not in st.session_state:
     st.session_state.selected_ids = set()
 if 'initial_load_complete' not in st.session_state:
     st.session_state.initial_load_complete = False
+if 'show_adjust_modal' not in st.session_state:
+    st.session_state.show_adjust_modal = False
+if 'adjustment_type' not in st.session_state:
+    st.session_state.adjustment_type = 'value'
+if 'adjustment_amount' not in st.session_state:
+    st.session_state.adjustment_amount = 0.0
 
 # Filter defaults
 filter_defaults = {
@@ -143,6 +149,7 @@ if 'active_rate_source_col' not in st.session_state:
 if 'rate_source_toggle' not in st.session_state:
     st.session_state.rate_source_toggle = 'Use Live Rate'
 
+# Helper functions
 def natural_sort_key_tier(tier_string):
     if tier_string is None:
         return (-1, tier_string)
@@ -152,6 +159,19 @@ def natural_sort_key_tier(tier_string):
         return (0, int(match.group(1)))
     else:
         return (1, tier_string)
+
+def apply_price_adjustment(current_price, adjustment_type, adjustment_amount):
+    """Apply price adjustment based on type and amount"""
+    try:
+        current_price = float(current_price)
+        adjustment_amount = float(adjustment_amount)
+        
+        if adjustment_type == 'percentage':
+            return current_price * (1 + adjustment_amount / 100)
+        else:  # value
+            return current_price + adjustment_amount
+    except (ValueError, TypeError):
+        return current_price
 
 def clear_all_filter_states():
     for key, default_value in filter_defaults.items():
@@ -546,6 +566,9 @@ with results_area:
             }
         )
 
+        # Initialize columnDefs as a list
+        column_defs = []
+
         # Configure columns in exact order
         column_order = [
             COL_SELECT,
@@ -564,14 +587,11 @@ with results_area:
             COL_STATUS
         ]
 
-        # First, hide all columns
-        for col in display_df.columns:
-            gb.configure_column(col, hide=True)
-
-        # Then configure visible columns in exact order with specific settings
+        # Configure columns in exact order
         for idx, col in enumerate(column_order):
             if col in display_df.columns:
                 base_config = {
+                    'field': col,
                     'resizable': True,
                     'cellStyle': {'textAlign': 'left'},
                     'headerClass': 'ag-header-cell-left',
@@ -583,77 +603,73 @@ with results_area:
                 }
                 
                 if col == COL_DATE:
-                    gb.configure_column(
-                        col,
-                        type=["dateColumnFilter", "customDateTimeFormat"],
-                        custom_format_string='YYYY-MM-DD',
-                        width=120,
-                        editable=False,
-                        **base_config
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'type': ["dateColumnFilter", "customDateTimeFormat"],
+                        'custom_format_string': 'YYYY-MM-DD',
+                        'width': 120,
+                        'editable': False
+                    })
                 elif col in [COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE]:
-                    gb.configure_column(
-                        col,
-                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
-                        precision=2,
-                        valueFormatter="'$' + value.toFixed(2)",
-                        editable=(col == COL_EDITABLE_PRICE),
-                        width=130,
-                        **base_config
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'type': ["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        'precision': 2,
+                        'valueFormatter': "'$' + value.toFixed(2)",
+                        'editable': (col == COL_EDITABLE_PRICE),
+                        'width': 130
+                    })
                 elif col == COL_DELTA:
-                    gb.configure_column(
-                        col,
-                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
-                        precision=1,
-                        valueFormatter="value.toFixed(1) + '%'",
-                        width=100,
-                        editable=False,
-                        **base_config
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'type': ["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        'precision': 1,
+                        'valueFormatter': "value.toFixed(1) + '%'",
+                        'width': 100,
+                        'editable': False
+                    })
                 elif col == COL_OCC_CURR:
-                    gb.configure_column(
-                        col,
-                        type=["numericColumn", "numberColumnFilter", "customNumericFormat"],
-                        precision=1,
-                        valueFormatter="value.toFixed(1) + '%'",
-                        width=110,
-                        editable=False,
-                        **base_config
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'type': ["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        'precision': 1,
+                        'valueFormatter': "value.toFixed(1) + '%'",
+                        'width': 110,
+                        'editable': False
+                    })
                 elif col == COL_SELECT:
-                    gb.configure_column(
-                        col,
-                        width=50,
-                        headerCheckboxSelection=True,
-                        headerCheckboxSelectionFilteredOnly=True,
-                        checkboxSelection=True,
-                        pinned='left',
-                        editable=False,
-                        **base_config
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'width': 50,
+                        'headerCheckboxSelection': True,
+                        'headerCheckboxSelectionFilteredOnly': True,
+                        'checkboxSelection': True,
+                        'pinned': 'left',
+                        'editable': False
+                    })
                 elif col == COL_ID:
-                    gb.configure_column(
-                        col,
-                        width=200,
-                        type=["textColumn"],
-                        editable=False,
-                        **{**base_config, 'hide': False}
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'width': 200,
+                        'type': ["textColumn"],
+                        'editable': False,
+                        'hide': False
+                    })
                 elif col in [COL_PROPERTY, COL_LISTING_NAME]:
-                    gb.configure_column(
-                        col,
-                        width=200,
-                        editable=False,
-                        **base_config
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'width': 200,
+                        'editable': False
+                    })
                 else:
-                    gb.configure_column(
-                        col,
-                        width=120,
-                        editable=False,
-                        **base_config
-                    )
+                    column_defs.append({
+                        **base_config,
+                        'width': 120,
+                        'editable': False
+                    })
+
+        # Set the columnDefs directly in grid options
+        gb.configure_grid_options(columnDefs=column_defs)
 
         # Create grid with filtered columns and proper configuration
         grid_key = 'main_grid_' + ('initial' if not st.session_state.initial_load_complete else 'updated')
@@ -740,23 +756,180 @@ with results_area:
                 if current_action_df is not None:
                     selected_for_action = pd.DataFrame(grid_response.selected_rows)
                     if not selected_for_action.empty:
+                        st.session_state.show_adjust_modal = True
+                    else:
+                        st.warning("No rows selected for adjustment.")
+                else:
+                    st.warning("No data available to adjust.")
+
+            # Add adjustment modal
+            if st.session_state.show_adjust_modal:
+                with st.form(key="adjustment_form"):
+                    st.subheader("Adjust Prices")
+                    
+                    # Adjustment type selection
+                    st.session_state.adjustment_type = st.radio(
+                        "Adjustment Type",
+                        options=['value', 'percentage'],
+                        format_func=lambda x: 'Absolute Value ($)' if x == 'value' else 'Percentage (%)',
+                        horizontal=True
+                    )
+
+                    # Direction and amount in separate columns
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        direction = st.radio(
+                            "Adjustment Direction",
+                            options=['increase', 'decrease'],
+                            format_func=lambda x: '➕ Increase' if x == 'increase' else '➖ Decrease',
+                            horizontal=True
+                        )
+                    
+                    with col2:
+                        # Adjustment amount input with appropriate label
+                        if st.session_state.adjustment_type == 'value':
+                            amount = st.number_input(
+                                "Amount ($)",
+                                min_value=0.0,
+                                value=0.0,
+                                step=1.0,
+                                format="%.2f"
+                            )
+                        else:
+                            amount = st.number_input(
+                                "Amount (%)",
+                                min_value=0.0,
+                                value=0.0,
+                                step=1.0,
+                                format="%.1f"
+                            )
+                    
+                    # Calculate actual adjustment amount based on direction
+                    st.session_state.adjustment_amount = -amount if direction == 'decrease' else amount
+                    
+                    # Show preview of adjustments
+                    selected_for_preview = pd.DataFrame(grid_response.selected_rows)
+                    if not selected_for_preview.empty:
+                        st.write("Preview of adjustments:")
+                        preview_df = selected_for_preview[[COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_EDITABLE_PRICE_SRC]].copy()
+                        preview_df['New Price'] = preview_df[COL_EDITABLE_PRICE_SRC].apply(
+                            lambda x: apply_price_adjustment(
+                                x, 
+                                st.session_state.adjustment_type,
+                                st.session_state.adjustment_amount
+                            )
+                        )
+                        preview_df['Change'] = preview_df['New Price'] - preview_df[COL_EDITABLE_PRICE_SRC]
+                        preview_df['Change %'] = (preview_df['Change'] / preview_df[COL_EDITABLE_PRICE_SRC] * 100).round(1)
+                        
+                        # Format and display preview
+                        st.dataframe(
+                            preview_df,
+                            column_config={
+                                COL_ID: "ID",
+                                COL_DATE: "Date",
+                                COL_PROPERTY_SRC: "Property",
+                                COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn(
+                                    "Current Price",
+                                    format="$%.2f"
+                                ),
+                                'New Price': st.column_config.NumberColumn(
+                                    "New Price",
+                                    format="$%.2f"
+                                ),
+                                'Change': st.column_config.NumberColumn(
+                                    "Change",
+                                    format="$%.2f",
+                                    help="Absolute change in price"
+                                ),
+                                'Change %': st.column_config.NumberColumn(
+                                    "Change %",
+                                    format="%.1f%%",
+                                    help="Percentage change in price"
+                                )
+                            },
+                            hide_index=True
+                        )
+                        
+                    # Form submit and cancel buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        submit = st.form_submit_button(
+                            f"{'Increase' if direction == 'increase' else 'Decrease'} Prices",
+                            type="primary" if direction == 'increase' else "secondary"
+                        )
+                    with col2:
+                        cancel = st.form_submit_button("Cancel")
+                    
+                    # First, add a new function to handle UI updates for selected rows (add this with other helper functions)
+                    def update_selected_rows_in_grid(grid_response, updates):
+                        """Update only selected rows in the grid without refreshing entire table"""
+                        if not hasattr(grid_response, 'data'):
+                            return
+                        
+                        updated_data = grid_response.data.copy()
+                        for update in updates:
+                            row_id = update[COL_ID]
+                            new_price = update[COL_EDITABLE_PRICE_SRC]
+                            mask = updated_data[COL_ID] == row_id
+                            if any(mask):
+                                updated_data.loc[mask, COL_EDITABLE_PRICE] = new_price
+                                updated_data.loc[mask, COL_EDITABLE_PRICE_SRC] = new_price
+                        
+                        return updated_data
+
+                    if submit:
+                        selected_for_action = pd.DataFrame(grid_response.selected_rows)
                         updates = []
-                        for index, row in selected_for_action.iterrows():
+                        for _, row in selected_for_action.iterrows():
+                            new_price = apply_price_adjustment(
+                                row[COL_EDITABLE_PRICE_SRC],
+                                st.session_state.adjustment_type,
+                                st.session_state.adjustment_amount
+                            )
+                            # Ensure price doesn't go below 0
+                            new_price = max(0, new_price)
                             update = {
                                 COL_ID: row[COL_ID],
-                                COL_EDITABLE_PRICE_SRC: row[COL_EDITABLE_PRICE_SRC]
+                                COL_EDITABLE_PRICE_SRC: new_price
                             }
                             updates.append(update)
                         
                         if updates:
                             if backend_interface.update_rates(updates):
+                                # Update only the selected rows in the grid
+                                updated_data = update_selected_rows_in_grid(grid_response, updates)
+                                if updated_data is not None:
+                                    # Update the grid with new data
+                                    grid_response = AgGrid(
+                                        updated_data,
+                                        gridOptions=gb.build(),
+                                        update_mode=GridUpdateMode.VALUE_CHANGED,
+                                        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                                        fit_columns_on_grid_load=False,
+                                        reload_data=False,
+                                        key=grid_key,
+                                        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+                                        allow_unsafe_jscode=True
+                                    )
+                                
+                                # Also update base_data for persistence
+                                for update in updates:
+                                    mask = st.session_state.base_data[COL_ID] == update[COL_ID]
+                                    st.session_state.base_data.loc[mask, COL_EDITABLE_PRICE_SRC] = update[COL_EDITABLE_PRICE_SRC]
+                                    st.session_state.base_data.loc[mask, COL_EDITABLE_PRICE] = update[COL_EDITABLE_PRICE_SRC]
+                                
                                 st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
                             else:
                                 st.error("Failed to log adjustments.")
-                    else:
-                        st.warning("No rows selected for adjustment.")
-                else:
-                    st.warning("No data available to adjust.")
+                        
+                        st.session_state.show_adjust_modal = False
+                        st.rerun()
+                    
+                    if cancel:
+                        st.session_state.show_adjust_modal = False
+                        st.rerun()
 
         with action_cols[1]:
             if st.button("Approve Selected", key='approve_button'):
