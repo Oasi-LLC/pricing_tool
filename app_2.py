@@ -903,7 +903,11 @@ with results_area:
                             
                             for idx, row in selected_df.iterrows():
                                 current_price = float(row[COL_EDITABLE_PRICE_SRC])
-                                new_price = max(0, round(current_price + st.session_state.adjustment_amount, 2))
+                                new_price = apply_price_adjustment(
+                                    current_price,
+                                    st.session_state.adjustment_type,
+                                    st.session_state.adjustment_amount
+                                )
                                 
                                 rate_id = row.get('_id')
                                 listing_id = row.get(COL_LISTING_ID)
