@@ -11,8 +11,7 @@ logger = logging.getLogger(__name__)
 def push_rates_to_pricelabs(
     listing_id: str,
     rates: List[Dict[str, Union[str, float, int]]],
-    pms: str = "cloudbeds",
-    update_children: bool = False
+    pms: str = "cloudbeds"
 ) -> bool:
     """
     Push rates to PriceLabs API for a specific listing.
@@ -20,9 +19,8 @@ def push_rates_to_pricelabs(
     Args:
         listing_id: The PriceLabs listing ID
         rates: List of rate dictionaries with format:
-              [{"date": "YYYY-MM-DD", "price": float/int, "min_stay": int}]
+              [{"date": "YYYY-MM-DD", "price": float/int}]
         pms: PMS system name (default: cloudbeds)
-        update_children: Whether to update child listings (default: False)
 
     Returns:
         bool: True if successful, False otherwise
@@ -44,8 +42,7 @@ def push_rates_to_pricelabs(
                 "date": rate["date"],
                 "price": str(int(float(rate["price"]))),  # Convert to integer string
                 "price_type": "fixed",
-                "currency": rate.get("currency", "USD"),
-                "min_stay": rate.get("min_stay", 1)
+                "currency": rate.get("currency", "USD")
             }
             formatted_overrides.append(override)
 
@@ -58,8 +55,7 @@ def push_rates_to_pricelabs(
         api_client.update_listing_overrides(
             listing_id=listing_id,
             overrides=formatted_overrides,
-            pms=pms,
-            update_children=update_children
+            pms=pms
         )
         
         logger.info(f"Successfully pushed rates for listing {listing_id}")
@@ -74,17 +70,15 @@ def push_rates_to_pricelabs(
 
 def push_rates_batch(
     rates_data: Dict[str, List[Dict]],
-    pms: str = "cloudbeds",
-    update_children: bool = False
+    pms: str = "cloudbeds"
 ) -> Dict[str, bool]:
     """
     Push rates for multiple listings in batch.
 
     Args:
         rates_data: Dictionary mapping listing IDs to their rates
-                   {"listing_id": [{"date": "YYYY-MM-DD", "price": float/int, "min_stay": int}]}
+                   {"listing_id": [{"date": "YYYY-MM-DD", "price": float/int}]}
         pms: PMS system name (default: cloudbeds)
-        update_children: Whether to update child listings (default: False)
 
     Returns:
         Dict[str, bool]: Results for each listing ID (True if successful)
@@ -94,8 +88,7 @@ def push_rates_batch(
         success = push_rates_to_pricelabs(
             listing_id=listing_id,
             rates=rates,
-            pms=pms,
-            update_children=update_children
+            pms=pms
         )
         results[listing_id] = success
     
@@ -107,10 +100,9 @@ def push_rates_batch(
 
 @click.command()
 @click.option('--listing-id', required=True, help='PriceLabs listing ID')
-@click.option('--rates-json', required=True, help='JSON string of rates in format: [{"date": "YYYY-MM-DD", "price": "123", "min_stay": 2}]')
+@click.option('--rates-json', required=True, help='JSON string of rates in format: [{"date": "YYYY-MM-DD", "price": "123"}]')
 @click.option('--pms', default="cloudbeds", help='PMS system name')
-@click.option('--update-children', is_flag=True, default=False, help='Whether to update child listings')
-def cli(listing_id: str, rates_json: str, pms: str, update_children: bool):
+def cli(listing_id: str, rates_json: str, pms: str):
     """Push rates to PriceLabs from JSON input."""
     try:
         rates = json.loads(rates_json)
@@ -125,8 +117,7 @@ def cli(listing_id: str, rates_json: str, pms: str, update_children: bool):
     success = push_rates_to_pricelabs(
         listing_id=listing_id,
         rates=rates,
-        pms=pms,
-        update_children=update_children
+        pms=pms
     )
 
     if success:
