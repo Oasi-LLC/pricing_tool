@@ -715,18 +715,27 @@ with results_area:
         # Update session state with current selections
         st.session_state.selected_ids = set(selected_ids)
         
-        # Display selection summary
+        # Clear updated_selected_df if no rows are selected
         if not selected_df.empty:
             st.info(f"Selected {len(selected_ids)} rows")
             
-            # Use updated data if available, otherwise use original selected data
-            display_df = st.session_state.get('updated_selected_df', selected_df)
+            # If we have updated data and all selected IDs are in it, use it
+            if 'updated_selected_df' in st.session_state:
+                updated_df = st.session_state.updated_selected_df
+                if all(id in updated_df[COL_ID].values for id in selected_ids):
+                    display_df = updated_df[updated_df[COL_ID].isin(selected_ids)]
+                else:
+                    display_df = selected_df
+                    if 'updated_selected_df' in st.session_state:
+                        del st.session_state.updated_selected_df
+            else:
+                display_df = selected_df
             
             display_columns = [COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE_SRC]
             valid_columns = [col for col in display_columns if col in display_df.columns]
             
-            # Add a unique key for the data editor based on content
-            editor_key = f"selection_editor_{pd.util.hash_pandas_object(display_df).sum()}"
+            # Add a unique key for the data editor based on selections
+            editor_key = f"selection_editor_{','.join(sorted(selected_ids))}"
             
             edited_selection = st.data_editor(
                 display_df[valid_columns],
@@ -743,14 +752,9 @@ with results_area:
                     COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0)
                 }
             )
-            
-            # Update the main dataframe with any edits made in the selection summary
-            if edited_selection is not None:
-                for _, row in edited_selection.iterrows():
-                    row_id = row[COL_ID]
-                    new_editable_price = row[COL_EDITABLE_PRICE_SRC]
-                    mask = st.session_state.base_data[COL_ID] == row_id
-                    st.session_state.base_data.loc[mask, COL_EDITABLE_PRICE_SRC] = new_editable_price
+        else:
+            if 'updated_selected_df' in st.session_state:
+                del st.session_state.updated_selected_df
 
         # Actions
         st.markdown("---")
