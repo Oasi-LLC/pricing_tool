@@ -759,13 +759,15 @@ with results_area:
             # Add button for getting push data right after the editor
             if st.button("GET PUSH DATA", key='get_push_data'):
                 selected_rates_dict = {}
-                # Use the edited data from the editor
-                for _, row in edited_selection.iterrows():
-                    selected_rates_dict[row[COL_LISTING_ID]] = {
-                        "listing_id": row[COL_LISTING_ID],
-                        "date": row[COL_DATE],
-                        "editable_rate": row[COL_EDITABLE_PRICE_SRC]
-                    }
+                # Group by listing_id and collect all rates for each listing
+                for listing_id, group in edited_selection.groupby(COL_LISTING_ID):
+                    selected_rates_dict[listing_id] = []
+                    for _, row in group.iterrows():
+                        selected_rates_dict[listing_id].append({
+                            "date": row[COL_DATE],
+                            "price": row[COL_EDITABLE_PRICE_SRC]
+                        })
+                
                 st.write("Selected Rates Dictionary:")
                 st.json(selected_rates_dict)
 
