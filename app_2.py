@@ -718,12 +718,21 @@ with results_area:
         # Display selection summary
         if not selected_df.empty:
             st.info(f"Selected {len(selected_ids)} rows")
+            
+            # Use updated data if available, otherwise use original selected data
+            display_df = st.session_state.get('updated_selected_df', selected_df)
+            
             display_columns = [COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE_SRC]
-            valid_columns = [col for col in display_columns if col in selected_df.columns]
+            valid_columns = [col for col in display_columns if col in display_df.columns]
+            
+            # Add a unique key for the data editor based on content
+            editor_key = f"selection_editor_{pd.util.hash_pandas_object(display_df).sum()}"
+            
             edited_selection = st.data_editor(
-                selected_df[valid_columns],
+                display_df[valid_columns],
                 hide_index=True,
                 disabled=[col for col in valid_columns if col != COL_EDITABLE_PRICE_SRC],
+                key=editor_key,
                 column_config={
                     COL_ID: st.column_config.TextColumn("ID"),
                     COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
@@ -862,27 +871,12 @@ with results_area:
                     with col2:
                         cancel = st.form_submit_button("Cancel")
                     
-                    # First, add a new function to handle UI updates for selected rows (add this with other helper functions)
-                    def update_selected_rows_in_grid(grid_response, updates):
-                        """Update only selected rows in the grid without refreshing entire table"""
-                        if not hasattr(grid_response, 'data'):
-                            return
-                        
-                        updated_data = grid_response.data.copy()
-                        for update in updates:
-                            row_id = update[COL_ID]
-                            new_price = update[COL_EDITABLE_PRICE_SRC]
-                            mask = updated_data[COL_ID] == row_id
-                            if any(mask):
-                                updated_data.loc[mask, COL_EDITABLE_PRICE] = new_price
-                                updated_data.loc[mask, COL_EDITABLE_PRICE_SRC] = new_price
-                        
-                        return updated_data
-
                     if submit:
-                        selected_for_action = pd.DataFrame(grid_response.selected_rows)
                         updates = []
-                        for _, row in selected_for_action.iterrows():
+                        # Create a copy of the data to update
+                        updated_selected_df = selected_df.copy()
+                        
+                        for _, row in selected_df.iterrows():
                             new_price = apply_price_adjustment(
                                 row[COL_EDITABLE_PRICE_SRC],
                                 st.session_state.adjustment_type,
@@ -890,36 +884,22 @@ with results_area:
                             )
                             # Ensure price doesn't go below 0
                             new_price = max(0, new_price)
-                            update = {
-                                COL_ID: row[COL_ID],
+                            row_id = row[COL_ID]
+                            
+                            # Add to updates for backend
+                            updates.append({
+                                COL_ID: row_id,
                                 COL_EDITABLE_PRICE_SRC: new_price
-                            }
-                            updates.append(update)
+                            })
+                            
+                            # Update the selected dataframe
+                            mask = updated_selected_df[COL_ID] == row_id
+                            updated_selected_df.loc[mask, COL_EDITABLE_PRICE_SRC] = new_price
                         
                         if updates:
                             if backend_interface.update_rates(updates):
-                                # Update only the selected rows in the grid
-                                updated_data = update_selected_rows_in_grid(grid_response, updates)
-                                if updated_data is not None:
-                                    # Update the grid with new data
-                                    grid_response = AgGrid(
-                                        updated_data,
-                                        gridOptions=gb.build(),
-                                        update_mode=GridUpdateMode.VALUE_CHANGED,
-                                        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                                        fit_columns_on_grid_load=False,
-                                        reload_data=False,
-                                        key=grid_key,
-                                        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
-                                        allow_unsafe_jscode=True
-                                    )
-                                
-                                # Also update base_data for persistence
-                                for update in updates:
-                                    mask = st.session_state.base_data[COL_ID] == update[COL_ID]
-                                    st.session_state.base_data.loc[mask, COL_EDITABLE_PRICE_SRC] = update[COL_EDITABLE_PRICE_SRC]
-                                    st.session_state.base_data.loc[mask, COL_EDITABLE_PRICE] = update[COL_EDITABLE_PRICE_SRC]
-                                
+                                # Store the updated dataframe in session state
+                                st.session_state.updated_selected_df = updated_selected_df
                                 st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
                             else:
                                 st.error("Failed to log adjustments.")
