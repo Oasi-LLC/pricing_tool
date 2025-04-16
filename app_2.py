@@ -167,9 +167,11 @@ def apply_price_adjustment(current_price, adjustment_type, adjustment_amount):
         adjustment_amount = float(adjustment_amount)
         
         if adjustment_type == 'percentage':
-            return current_price * (1 + adjustment_amount / 100)
+            # Convert percentage to decimal and add to 1 for multiplication
+            # e.g., 10% increase = 1.10, -10% decrease = 0.90
+            return round(current_price * (1 + (adjustment_amount / 100)), 2)
         else:  # value
-            return current_price + adjustment_amount
+            return round(current_price + adjustment_amount, 2)
     except (ValueError, TypeError):
         return current_price
 
@@ -784,7 +786,7 @@ with results_area:
                     st.session_state.adjustment_type = st.radio(
                         "Adjustment Type",
                         options=['value', 'percentage'],
-                        format_func=lambda x: 'Absolute Value ($)' if x == 'value' else 'Percentage (%)',
+                        format_func=lambda x: 'Fixed Amount ($)' if x == 'value' else 'Percentage (%)',
                         horizontal=True
                     )
 
@@ -793,17 +795,18 @@ with results_area:
                     
                     with col1:
                         direction = st.radio(
-                            "Adjustment Direction",
+                            "Direction",
                             options=['increase', 'decrease'],
-                            format_func=lambda x: '➕ Increase' if x == 'increase' else '➖ Decrease',
+                            format_func=lambda x: 'Increase (+)' if x == 'increase' else 'Decrease (-)',
                             horizontal=True
                         )
                     
                     with col2:
                         # Adjustment amount input with appropriate label
+                        amount_label = "Adjustment Amount" + (" ($)" if st.session_state.adjustment_type == 'value' else " (%)")
                         if st.session_state.adjustment_type == 'value':
                             amount = st.number_input(
-                                "Amount ($)",
+                                amount_label,
                                 min_value=0.0,
                                 value=0.0,
                                 step=1.0,
@@ -811,7 +814,7 @@ with results_area:
                             )
                         else:
                             amount = st.number_input(
-                                "Amount (%)",
+                                amount_label,
                                 min_value=0.0,
                                 value=0.0,
                                 step=1.0,
@@ -852,12 +855,12 @@ with results_area:
                                     format="$%.2f"
                                 ),
                                 'Change': st.column_config.NumberColumn(
-                                    "Change",
+                                    "Absolute Change",
                                     format="$%.2f",
                                     help="Absolute change in price"
                                 ),
                                 'Change %': st.column_config.NumberColumn(
-                                    "Change %",
+                                    "Relative Change",
                                     format="%.1f%%",
                                     help="Percentage change in price"
                                 )
@@ -868,8 +871,9 @@ with results_area:
                     # Form submit and cancel buttons
                     col1, col2 = st.columns(2)
                     with col1:
+                        submit_text = f"Apply {direction.title()} by {amount:.2f}" + (" $" if st.session_state.adjustment_type == 'value' else " %")
                         submit = st.form_submit_button(
-                            f"{'Increase' if direction == 'increase' else 'Decrease'} Prices",
+                            submit_text,
                             type="primary" if direction == 'increase' else "secondary"
                         )
                     with col2:
@@ -881,13 +885,14 @@ with results_area:
                         updated_selected_df = selected_df.copy()
                         
                         for _, row in selected_df.iterrows():
+                            current_price = float(row[COL_EDITABLE_PRICE_SRC])
                             new_price = apply_price_adjustment(
-                                row[COL_EDITABLE_PRICE_SRC],
+                                current_price,
                                 st.session_state.adjustment_type,
                                 st.session_state.adjustment_amount
                             )
                             # Ensure price doesn't go below 0
-                            new_price = max(0, new_price)
+                            new_price = max(0, round(new_price, 2))
                             row_id = row[COL_ID]
                             
                             # Add to updates for backend
