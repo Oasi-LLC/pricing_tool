@@ -1,2 +1,0 @@
-Timestamp	ListingId	ListingName	PMSName	StartDate	EndDate	OldPrice	NewPrice	Currency	ErrorDetails
-2025-04-13 12:31:04	316005___633306	N/A	all	2025-07-21	2025-07-24	$0.00	$0.00	N/A	Failed to fetch or process overrides for listing 316005___633306: Error fetching overrides: 404 Client Error: Not Found for url: https://api.pricelabs.co/v1/listings/316005___633306/overrides?pms=all
