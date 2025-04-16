@@ -10,6 +10,15 @@ from ..api_client import PriceLabsAPI, PriceLabsAPIError
 # Setup logging
 logger = logging.getLogger(__name__)
 
+# Add console handler if not already added
+if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    logger.setLevel(logging.INFO)
+
 def get_pms_for_listing(listing_id: str) -> str:
     """
     Get the PMS system name for a specific listing from the properties configuration.
