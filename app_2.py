@@ -535,13 +535,13 @@ with results_area:
 
         # Reset index and use listing IDs
         display_df = display_df.reset_index(drop=True)
-        display_df[COL_ID] = display_df[COL_LISTING_ID]  # Use listing_id as the ID
+        display_df[COL_LISTING_ID] = display_df[COL_LISTING_ID]  # Use listing_id as the ID
 
         # Ensure Select column exists and initialize with previous selections
         if COL_SELECT not in display_df.columns:
             display_df[COL_SELECT] = False
         if st.session_state.checkbox_selections:
-            display_df[COL_SELECT] = display_df[COL_ID].map(st.session_state.checkbox_selections).fillna(False)
+            display_df[COL_SELECT] = display_df[COL_LISTING_ID].map(st.session_state.checkbox_selections).fillna(False)
 
         # Configure grid options
         gb = GridOptionsBuilder.from_dataframe(display_df)
@@ -575,7 +575,7 @@ with results_area:
         # Configure columns in exact order
         column_order = [
             COL_SELECT,
-            COL_ID,
+            COL_LISTING_ID,
             COL_DATE,
             COL_PROPERTY,
             COL_LISTING_NAME,
@@ -650,7 +650,7 @@ with results_area:
                         'pinned': 'left',
                         'editable': False
                     })
-                elif col == COL_ID:
+                elif col == COL_LISTING_ID:
                     column_defs.append({
                         **base_config,
                         'width': 200,
@@ -713,7 +713,7 @@ with results_area:
         selected_df = pd.DataFrame(grid_response.selected_rows) if hasattr(grid_response, 'selected_rows') else pd.DataFrame()
         
         # Extract IDs from selected DataFrame
-        selected_ids = selected_df[COL_ID].tolist() if not selected_df.empty else []
+        selected_ids = selected_df[COL_LISTING_ID].tolist() if not selected_df.empty else []
         
         # Update session state with current selections
         st.session_state.selected_ids = set(selected_ids)
@@ -725,8 +725,8 @@ with results_area:
             # If we have updated data and all selected IDs are in it, use it
             if 'updated_selected_df' in st.session_state:
                 updated_df = st.session_state.updated_selected_df
-                if all(id in updated_df[COL_ID].values for id in selected_ids):
-                    display_df = updated_df[updated_df[COL_ID].isin(selected_ids)]
+                if all(id in updated_df[COL_LISTING_ID].values for id in selected_ids):
+                    display_df = updated_df[updated_df[COL_LISTING_ID].isin(selected_ids)]
                 else:
                     display_df = selected_df
                     if 'updated_selected_df' in st.session_state:
@@ -734,7 +734,7 @@ with results_area:
             else:
                 display_df = selected_df
             
-            display_columns = [COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE_SRC]
+            display_columns = [COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE_SRC]
             valid_columns = [col for col in display_columns if col in display_df.columns]
             
             # Add a unique key for the data editor based on selections
@@ -746,7 +746,7 @@ with results_area:
                 disabled=[col for col in valid_columns if col != COL_EDITABLE_PRICE_SRC],
                 key=editor_key,
                 column_config={
-                    COL_ID: st.column_config.TextColumn("ID"),
+                    COL_LISTING_ID: st.column_config.TextColumn("ID"),
                     COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
                     COL_PROPERTY_SRC: st.column_config.TextColumn("Property"),
                     COL_LISTING_NAME: st.column_config.TextColumn("Listing Name"),
@@ -755,6 +755,20 @@ with results_area:
                     COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0)
                 }
             )
+
+            # Add button for getting push data right after the editor
+            if st.button("GET PUSH DATA", key='get_push_data'):
+                selected_rates_dict = {}
+                # Use the edited data from the editor
+                for _, row in edited_selection.iterrows():
+                    selected_rates_dict[row[COL_LISTING_ID]] = {
+                        "listing_id": row[COL_LISTING_ID],
+                        "date": row[COL_DATE],
+                        "editable_rate": row[COL_EDITABLE_PRICE_SRC]
+                    }
+                st.write("Selected Rates Dictionary:")
+                st.json(selected_rates_dict)
+
         else:
             if 'updated_selected_df' in st.session_state:
                 del st.session_state.updated_selected_df
@@ -829,7 +843,7 @@ with results_area:
                     selected_for_preview = pd.DataFrame(grid_response.selected_rows)
                     if not selected_for_preview.empty:
                         st.write("Preview of adjustments:")
-                        preview_df = selected_for_preview[[COL_ID, COL_DATE, COL_PROPERTY_SRC, COL_EDITABLE_PRICE_SRC]].copy()
+                        preview_df = selected_for_preview[[COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_EDITABLE_PRICE_SRC]].copy()
                         preview_df['New Price'] = preview_df[COL_EDITABLE_PRICE_SRC].apply(
                             lambda x: apply_price_adjustment(
                                 x, 
@@ -844,7 +858,7 @@ with results_area:
                         st.dataframe(
                             preview_df,
                             column_config={
-                                COL_ID: "ID",
+                                COL_LISTING_ID: "ID",
                                 COL_DATE: "Date",
                                 COL_PROPERTY_SRC: "Property",
                                 COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn(
@@ -894,16 +908,16 @@ with results_area:
                             )
                             # Ensure price doesn't go below 0
                             new_price = max(0, round(new_price, 2))
-                            row_id = row[COL_ID]
+                            row_id = row[COL_LISTING_ID]
                             
                             # Add to updates for backend
                             updates.append({
-                                COL_ID: row_id,
+                                COL_LISTING_ID: row_id,
                                 COL_EDITABLE_PRICE_SRC: new_price
                             })
                             
                             # Update the selected dataframe
-                            mask = updated_selected_df[COL_ID] == row_id
+                            mask = updated_selected_df[COL_LISTING_ID] == row_id
                             updated_selected_df.loc[mask, COL_EDITABLE_PRICE_SRC] = new_price
                         
                         if updates:
@@ -930,18 +944,18 @@ with results_area:
                         ids_to_update_locally = []
                         for index, row in selected_for_action.iterrows():
                             update = {
-                                COL_ID: row[COL_ID],
+                                COL_LISTING_ID: row[COL_LISTING_ID],
                                 COL_STATUS: 'Approved'
                             }
                             updates.append(update)
-                            ids_to_update_locally.append(row[COL_ID])
+                            ids_to_update_locally.append(row[COL_LISTING_ID])
                         
                         if updates:
                             if backend_interface.update_rates(updates):
                                 st.toast(f"{len(updates)} rate approval(s) logged.", icon="👍")
                                 # Update local state
                                 st.session_state.base_data.loc[
-                                    st.session_state.base_data[COL_ID].isin(ids_to_update_locally), 
+                                    st.session_state.base_data[COL_LISTING_ID].isin(ids_to_update_locally), 
                                     COL_STATUS
                                 ] = 'Approved'
                                 st.rerun()
@@ -956,7 +970,7 @@ with results_area:
             if st.button("Push Approved Rates Live", key='push_button', type="secondary"):
                 approved_rates = display_df[display_df[COL_STATUS] == 'Approved']
                 if not approved_rates.empty:
-                    approved_ids = approved_rates[COL_ID].tolist()
+                    approved_ids = approved_rates[COL_LISTING_ID].tolist()
                     confirm = st.confirm(f"Push {len(approved_ids)} approved rate(s) live? This will write to an output file.")
                     if confirm:
                         with st.spinner("Pushing rates live..."):
