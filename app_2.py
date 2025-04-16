@@ -289,9 +289,10 @@ def load_and_prepare_data(property_selection, start_date, end_date):
             merged_df = generated_df.copy()
             merged_df[COL_LIVE_RATE] = 0.0
         
-        # Initialize editable price with live rate by default
-        if COL_EDITABLE_PRICE_SRC not in merged_df.columns:
-            merged_df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(merged_df[COL_LIVE_RATE], errors='coerce').fillna(0.0)
+        # Initialize editable price based on current toggle state
+        toggle_value = st.session_state.get('rate_source_toggle', 'Use Live Rate')
+        source_col = COL_LIVE_RATE if toggle_value == 'Use Live Rate' else COL_SUGGESTED
+        merged_df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(merged_df[source_col], errors='coerce').fillna(0.0)
         
         # Calculate all derived columns
         merged_df = calculate_derived_columns(merged_df)
@@ -803,7 +804,7 @@ with results_area:
                     
                     with col2:
                         # Adjustment amount input with appropriate label
-                        amount_label = "Adjustment Amount" + (" ($)" if st.session_state.adjustment_type == 'value' else " (%)")
+                        amount_label = "Adjustment Amount"
                         if st.session_state.adjustment_type == 'value':
                             amount = st.number_input(
                                 amount_label,
