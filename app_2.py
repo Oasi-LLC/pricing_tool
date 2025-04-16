@@ -6,6 +6,8 @@ import numpy as np
 from pathlib import Path
 import re
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode, ColumnsAutoSizeMode
+import json
+from rates.push.push_rates import push_rates_to_pricelabs, push_rates_batch
 
 # Import backend interface functions
 from utils import backend_interface
@@ -756,21 +758,6 @@ with results_area:
                 }
             )
 
-            # Add button for getting push data right after the editor
-            if st.button("GET PUSH DATA", key='get_push_data'):
-                selected_rates_dict = {}
-                # Group by listing_id and collect all rates for each listing
-                for listing_id, group in edited_selection.groupby(COL_LISTING_ID):
-                    selected_rates_dict[listing_id] = []
-                    for _, row in group.iterrows():
-                        selected_rates_dict[listing_id].append({
-                            "date": row[COL_DATE],
-                            "price": row[COL_EDITABLE_PRICE_SRC]
-                        })
-                
-                st.write("Selected Rates Dictionary:")
-                st.json(selected_rates_dict)
-
         else:
             if 'updated_selected_df' in st.session_state:
                 del st.session_state.updated_selected_df
@@ -937,48 +924,90 @@ with results_area:
                         st.session_state.show_adjust_modal = False
                         st.rerun()
 
-        with action_cols[1]:
-            if st.button("Approve Selected", key='approve_button'):
-                if current_action_df is not None:
-                    selected_for_action = pd.DataFrame(grid_response.selected_rows)
-                    if not selected_for_action.empty:
-                        updates = []
-                        ids_to_update_locally = []
-                        for index, row in selected_for_action.iterrows():
-                            update = {
-                                COL_LISTING_ID: row[COL_LISTING_ID],
-                                COL_STATUS: 'Approved'
-                            }
-                            updates.append(update)
-                            ids_to_update_locally.append(row[COL_LISTING_ID])
+        # with action_cols[1]:
+        #     if st.button("Approve Selected", key='approve_button'):
+        #         if current_action_df is not None:
+        #             selected_for_action = pd.DataFrame(grid_response.selected_rows)
+        #             if not selected_for_action.empty:
+        #                 updates = []
+        #                 ids_to_update_locally = []
+        #                 for index, row in selected_for_action.iterrows():
+        #                     update = {
+        #                         COL_LISTING_ID: row[COL_LISTING_ID],
+        #                         COL_STATUS: 'Approved'
+        #                     }
+        #                     updates.append(update)
+        #                     ids_to_update_locally.append(row[COL_LISTING_ID])
                         
-                        if updates:
-                            if backend_interface.update_rates(updates):
-                                st.toast(f"{len(updates)} rate approval(s) logged.", icon="👍")
-                                # Update local state
-                                st.session_state.base_data.loc[
-                                    st.session_state.base_data[COL_LISTING_ID].isin(ids_to_update_locally), 
-                                    COL_STATUS
-                                ] = 'Approved'
-                                st.rerun()
-                            else:
-                                st.error("Failed to log approvals.")
-                    else:
-                        st.warning("No rows selected for approval.")
-                else:
-                    st.warning("No data available to approve.")
+        #                 if updates:
+        #                     if backend_interface.update_rates(updates):
+        #                         st.toast(f"{len(updates)} rate approval(s) logged.", icon="👍")
+        #                         # Update local state
+        #                         st.session_state.base_data.loc[
+        #                             st.session_state.base_data[COL_LISTING_ID].isin(ids_to_update_locally), 
+        #                             COL_STATUS
+        #                         ] = 'Approved'
+        #                         st.rerun()
+        #                     else:
+        #                         st.error("Failed to log approvals.")
+        #             else:
+        #                 st.warning("No rows selected for approval.")
+        #         else:
+        #             st.warning("No data available to approve.")
 
         with action_cols[2]:
-            if st.button("Push Approved Rates Live", key='push_button', type="secondary"):
-                approved_rates = display_df[display_df[COL_STATUS] == 'Approved']
-                if not approved_rates.empty:
-                    approved_ids = approved_rates[COL_LISTING_ID].tolist()
-                    confirm = st.confirm(f"Push {len(approved_ids)} approved rate(s) live? This will write to an output file.")
-                    if confirm:
-                        with st.spinner("Pushing rates live..."):
-                            if backend_interface.push_rates_live(approved_ids, approved_rates):
-                                st.toast(f"{len(approved_ids)} approved rate(s) written to output file.", icon="🚀")
-                            else:
-                                st.error("Failed to push rates live.")
-                else:
-                    st.warning("No rates currently marked as 'Approved' to push.")
+            # Initialize push confirmation state if not exists
+            if 'show_push_confirm' not in st.session_state:
+                st.session_state.show_push_confirm = False
+                st.session_state.rates_to_push = None
+
+            if not st.session_state.show_push_confirm:
+                if st.button("Push Selected Rates", key='push_button', type="secondary"):
+                    if not edited_selection.empty:
+                        # Prepare the rates dictionary
+                        selected_rates_dict = {}
+                        for listing_id, group in edited_selection.groupby(COL_LISTING_ID):
+                            selected_rates_dict[listing_id] = []
+                            for _, row in group.iterrows():
+                                selected_rates_dict[listing_id].append({
+                                    "date": row[COL_DATE],
+                                    "price": row[COL_EDITABLE_PRICE_SRC]
+                                })
+                        # Store in session state
+                        st.session_state.rates_to_push = selected_rates_dict
+                        st.session_state.show_push_confirm = True
+                        st.rerun()
+                    else:
+                        st.warning("No rates selected to push.")
+            
+            # Show confirmation dialog if needed
+            if st.session_state.show_push_confirm and st.session_state.rates_to_push:
+                with st.expander("Review and Confirm Push", expanded=True):
+                    st.write("The following rates will be pushed:")
+                    st.json(st.session_state.rates_to_push)
+                    
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        if st.button("✅ Confirm Push", type="primary", key="confirm_push"):
+                            try:                                
+                                for listing_id, rates in st.session_state.rates_to_push.items():
+                                    success = push_rates_to_pricelabs(
+                                        listing_id=listing_id,
+                                        rates=rates
+                                    )
+                                    
+                                    if success:
+                                        st.success(f"✅ Pushed rates for {listing_id}")
+                                    else:
+                                        st.error(f"❌ Failed to push rates for {listing_id}")
+                                        
+                            except Exception as e:
+                                st.error(f"Error during push: {str(e)}")
+                                import traceback
+                                st.code(traceback.format_exc(), language="python")
+                    
+                    with col2:
+                        if st.button("❌ Cancel", key="cancel_push"):
+                            st.session_state.show_push_confirm = False
+                            st.session_state.rates_to_push = None
+                            st.rerun()
