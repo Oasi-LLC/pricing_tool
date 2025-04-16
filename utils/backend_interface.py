@@ -290,25 +290,27 @@ def update_rates(updates: list):
     log_file = OUTPUT_DIR / "updates_log.csv"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_entries = []
+
     for update in updates:
-        log_entries.append({
+        log_entry = {
             'timestamp': now,
-            'rate_id': update.get('_id'),
+            'rate_id': update.get('_id', update.get('listing_id')),  # Try _id first, then listing_id as fallback
             'new_price': update.get('Editable Price'),
-            'new_status': update.get('Status')
-        })
+            'new_status': update.get('Status', 'Updated')  # Default to 'Updated' if no status provided
+        }
+        log_entries.append(log_entry)
 
     try:
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         log_df = pd.DataFrame(log_entries)
+        
         # Check if file exists to append header correctly
         write_header = not log_file.exists()
         log_df.to_csv(log_file, mode='a', header=write_header, index=False)
-        print(f"Logged {len(log_entries)} updates to {log_file}")
         return True
     except Exception as e:
-        st.error(f"Error logging updates to {log_file}: {e}")
         traceback.print_exc()
+        st.error(f"Error logging updates to {log_file}: {e}")
         return False
 
 def push_rates_live(approved_rate_ids: list, all_rates_df: pd.DataFrame):

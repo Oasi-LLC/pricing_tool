@@ -164,17 +164,33 @@ def natural_sort_key_tier(tier_string):
 
 def apply_price_adjustment(current_price, adjustment_type, adjustment_amount):
     """Apply price adjustment based on type and amount"""
+    print(f"\n[DEBUG] Starting price adjustment:")
+    print(f"[DEBUG] Input - current_price: {current_price} ({type(current_price)})")
+    print(f"[DEBUG] Input - adjustment_type: {adjustment_type}")
+    print(f"[DEBUG] Input - adjustment_amount: {adjustment_amount} ({type(adjustment_amount)})")
+    
     try:
         current_price = float(current_price)
         adjustment_amount = float(adjustment_amount)
         
+        print(f"[DEBUG] Converted - current_price: {current_price}")
+        print(f"[DEBUG] Converted - adjustment_amount: {adjustment_amount}")
+        
         if adjustment_type == 'percentage':
             # Convert percentage to decimal and add to 1 for multiplication
             # e.g., 10% increase = 1.10, -10% decrease = 0.90
-            return round(current_price * (1 + (adjustment_amount / 100)), 2)
+            multiplier = 1 + (adjustment_amount / 100)
+            result = round(current_price * multiplier, 2)
+            print(f"[DEBUG] Percentage calculation - multiplier: {multiplier}")
+            print(f"[DEBUG] Percentage calculation - result: {result}")
+            return result
         else:  # value
-            return round(current_price + adjustment_amount, 2)
-    except (ValueError, TypeError):
+            result = round(current_price + adjustment_amount, 2)
+            print(f"[DEBUG] Value calculation - result: {result}")
+            return result
+    except (ValueError, TypeError) as e:
+        print(f"[DEBUG] Error in price adjustment: {e}")
+        print(f"[DEBUG] Returning original price: {current_price}")
         return current_price
 
 def clear_all_filter_states():
@@ -833,6 +849,11 @@ with results_area:
                     if not selected_for_preview.empty:
                         st.write("Preview of adjustments:")
                         preview_df = selected_for_preview[[COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_EDITABLE_PRICE_SRC]].copy()
+                        
+                        # Debug information before adjustment
+                        st.write("\n[DEBUG] Before adjustment:")
+                        st.write(f"Preview DataFrame head:\n{preview_df.head()}")
+                        
                         preview_df['New Price'] = preview_df[COL_EDITABLE_PRICE_SRC].apply(
                             lambda x: apply_price_adjustment(
                                 x, 
@@ -842,6 +863,10 @@ with results_area:
                         )
                         preview_df['Change'] = preview_df['New Price'] - preview_df[COL_EDITABLE_PRICE_SRC]
                         preview_df['Change %'] = (preview_df['Change'] / preview_df[COL_EDITABLE_PRICE_SRC] * 100).round(1)
+                        
+                        # Debug information after adjustment
+                        st.write("\n[DEBUG] After adjustment:")
+                        st.write(f"Preview DataFrame with new prices:\n{preview_df.head()}")
                         
                         # Format and display preview
                         st.dataframe(
@@ -872,57 +897,97 @@ with results_area:
                             hide_index=True
                         )
                         
-                    # Form submit and cancel buttons
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        submit_text = f"Apply {direction.title()} by {amount:.2f}" + (" $" if st.session_state.adjustment_type == 'value' else " %")
-                        submit = st.form_submit_button(
-                            submit_text,
-                            type="primary" if direction == 'increase' else "secondary"
-                        )
-                    with col2:
-                        cancel = st.form_submit_button("Cancel")
-                    
-                    if submit:
-                        updates = []
-                        # Create a copy of the data to update
-                        updated_selected_df = selected_df.copy()
-                        
-                        for _, row in selected_df.iterrows():
-                            current_price = float(row[COL_EDITABLE_PRICE_SRC])
-                            new_price = apply_price_adjustment(
-                                current_price,
-                                st.session_state.adjustment_type,
-                                st.session_state.adjustment_amount
+                        # Form submit and cancel buttons
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            submit_text = f"Apply {direction.title()} by {amount:.2f}" + (" $" if st.session_state.adjustment_type == 'value' else " %")
+                            submit = st.form_submit_button(
+                                submit_text,
+                                type="primary" if direction == 'increase' else "secondary"
                             )
-                            # Ensure price doesn't go below 0
-                            new_price = max(0, round(new_price, 2))
-                            row_id = row[COL_LISTING_ID]
-                            
-                            # Add to updates for backend
-                            updates.append({
-                                COL_LISTING_ID: row_id,
-                                COL_EDITABLE_PRICE_SRC: new_price
-                            })
-                            
-                            # Update the selected dataframe
-                            mask = updated_selected_df[COL_LISTING_ID] == row_id
-                            updated_selected_df.loc[mask, COL_EDITABLE_PRICE_SRC] = new_price
+                        with col2:
+                            cancel = st.form_submit_button("Cancel")
                         
-                        if updates:
-                            if backend_interface.update_rates(updates):
-                                # Store the updated dataframe in session state
-                                st.session_state.updated_selected_df = updated_selected_df
-                                st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
-                            else:
-                                st.error("Failed to log adjustments.")
-                        
-                        st.session_state.show_adjust_modal = False
-                        st.rerun()
-                    
-                    if cancel:
-                        st.session_state.show_adjust_modal = False
-                        st.rerun()
+                        if submit:
+                            updates = []
+                            # Create a copy of the data to update
+                            updated_selected_df = selected_df.copy()
+                            
+                            # Create comparison table of before values
+                            print("\nBEFORE ADJUSTMENT:")
+                            comparison_df = selected_df[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
+                            comparison_df.columns = ['Listing ID', 'Date', 'Original Price']
+                            print(comparison_df.to_string(index=False))
+                            
+                            # Store original indices to maintain order
+                            original_indices = selected_df.index.tolist()
+                            
+                            # Create a dictionary to store updates by listing_id and date
+                            price_updates = {}
+                            
+                            for idx, row in selected_df.iterrows():
+                                current_price = float(row[COL_EDITABLE_PRICE_SRC])
+                                new_price = max(0, round(current_price + st.session_state.adjustment_amount, 2))
+                                
+                                rate_id = row.get('_id')
+                                listing_id = row.get(COL_LISTING_ID)
+                                date = row.get(COL_DATE)
+                                
+                                # Store update in dictionary
+                                key = (listing_id, date)
+                                price_updates[key] = new_price
+                                
+                                update_dict = {
+                                    '_id': rate_id,
+                                    'listing_id': listing_id,
+                                    COL_EDITABLE_PRICE_SRC: new_price,
+                                    'Status': 'Adjusted'
+                                }
+                                updates.append(update_dict)
+                            
+                            if updates:
+                                print("\nAFTER ADJUSTMENT:")
+                                # Update the DataFrame with new prices before showing it
+                                for update in updates:
+                                    mask = (updated_selected_df[COL_LISTING_ID] == update['listing_id'])
+                                    updated_selected_df.loc[mask, COL_EDITABLE_PRICE_SRC] = update[COL_EDITABLE_PRICE_SRC]
+                                
+                                after_df = updated_selected_df[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
+                                after_df.columns = ['Listing ID', 'Date', 'New Price']
+                                print(after_df.to_string(index=False))
+                                
+                                if backend_interface.update_rates(updates):
+                                    # Update the edited_selection DataFrame with new prices
+                                    for idx in edited_selection.index:
+                                        listing_id = edited_selection.at[idx, COL_LISTING_ID]
+                                        date = edited_selection.at[idx, COL_DATE]
+                                        key = (listing_id, date)
+                                        if key in price_updates:
+                                            edited_selection.at[idx, COL_EDITABLE_PRICE_SRC] = price_updates[key]
+                                    
+                                    # Store the updated dataframe in session state
+                                    st.session_state.updated_selected_df = updated_selected_df.copy()
+                                    
+                                    # Update filtered data
+                                    update_filtered_data()
+                                    
+                                    # Show what's in the selected table
+                                    print("\nSELECTED TABLE DATA:")
+                                    selected_table = edited_selection[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
+                                    selected_table.columns = ['Listing ID', 'Date', 'Table Price']
+                                    print(selected_table.to_string(index=False))
+                                    
+                                    st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
+                                else:
+                                    print("[DEBUG] Backend update failed")
+                                    st.error("Failed to log adjustments.")
+                            
+                                st.session_state.show_adjust_modal = False
+                                st.rerun()
+
+                            if cancel:
+                                st.session_state.show_adjust_modal = False
+                                st.rerun()
 
         # with action_cols[1]:
         #     if st.button("Approve Selected", key='approve_button'):
