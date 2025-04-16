@@ -890,6 +890,8 @@ with results_area:
                             updates = []
                             # Create a copy of the data to update
                             updated_selected_df = selected_df.copy()
+                            # Ensure price columns are float type
+                            updated_selected_df[COL_EDITABLE_PRICE_SRC] = updated_selected_df[COL_EDITABLE_PRICE_SRC].astype(float)
                             
                             # Create comparison table of before values
                             comparison_df = selected_df[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
@@ -942,6 +944,7 @@ with results_area:
                                 
                                 if backend_interface.update_rates(updates):
                                     # Update the edited_selection DataFrame with new prices
+                                    edited_selection[COL_EDITABLE_PRICE_SRC] = edited_selection[COL_EDITABLE_PRICE_SRC].astype(float)
                                     for idx in edited_selection.index:
                                         listing_id = edited_selection.at[idx, COL_LISTING_ID]
                                         date = edited_selection.at[idx, COL_DATE]
