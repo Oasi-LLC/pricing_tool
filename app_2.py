@@ -493,7 +493,7 @@ with results_area:
             st.session_state.previous_toggle_value = st.session_state.rate_source_toggle
         
         # Filters with callbacks
-        with st.expander("Filter Displayed Rates", expanded=True):
+        with st.expander("Filter Displayed Rates", expanded=False):
             filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
             
             with filter_col1:
