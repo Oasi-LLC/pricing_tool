@@ -3,15 +3,44 @@ from typing import List, Dict, Union, Optional
 from datetime import datetime, timedelta
 import click
 import json
+import yaml
+from pathlib import Path
 from ..api_client import PriceLabsAPI, PriceLabsAPIError
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
+def get_pms_for_listing(listing_id: str) -> str:
+    """
+    Get the PMS system name for a specific listing from the properties configuration.
+
+    Args:
+        listing_id: The PriceLabs listing ID
+
+    Returns:
+        str: PMS system name (defaults to 'cloudbeds' if not found)
+    """
+    try:
+        config_path = Path(__file__).parent.parent.parent / 'config' / 'properties.yaml'
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        # Search through all properties for the listing
+        for property_data in config['properties'].values():
+            for listing in property_data.get('listings', []):
+                if listing['id'] == listing_id:
+                    return property_data.get('pms', 'cloudbeds')
+        
+        logger.warning(f"Listing {listing_id} not found in configuration, using default PMS")
+        return 'cloudbeds'
+    except Exception as e:
+        logger.error(f"Error reading PMS configuration: {str(e)}")
+        return 'cloudbeds'
+
 def push_rates_to_pricelabs(
     listing_id: str,
     rates: List[Dict[str, Union[str, float, int]]],
-    pms: str = "cloudbeds"
+    pms: Optional[str] = None
 ) -> bool:
     """
     Push rates to PriceLabs API for a specific listing.
@@ -20,7 +49,7 @@ def push_rates_to_pricelabs(
         listing_id: The PriceLabs listing ID
         rates: List of rate dictionaries with format:
               [{"date": "YYYY-MM-DD", "price": float/int}]
-        pms: PMS system name (default: cloudbeds)
+        pms: Optional PMS system name (if not provided, will be read from config)
 
     Returns:
         bool: True if successful, False otherwise
@@ -28,6 +57,10 @@ def push_rates_to_pricelabs(
     try:
         # Initialize API client
         api_client = PriceLabsAPI()
+
+        # Get PMS from configuration if not provided
+        if pms is None:
+            pms = get_pms_for_listing(listing_id)
 
         # Format rates for PriceLabs API
         formatted_overrides = []
@@ -70,7 +103,7 @@ def push_rates_to_pricelabs(
 
 def push_rates_batch(
     rates_data: Dict[str, List[Dict]],
-    pms: str = "cloudbeds"
+    pms: Optional[str] = None
 ) -> Dict[str, bool]:
     """
     Push rates for multiple listings in batch.
@@ -78,7 +111,7 @@ def push_rates_batch(
     Args:
         rates_data: Dictionary mapping listing IDs to their rates
                    {"listing_id": [{"date": "YYYY-MM-DD", "price": float/int}]}
-        pms: PMS system name (default: cloudbeds)
+        pms: Optional PMS system name (if not provided, will be read from config for each listing)
 
     Returns:
         Dict[str, bool]: Results for each listing ID (True if successful)
@@ -101,8 +134,8 @@ def push_rates_batch(
 @click.command()
 @click.option('--listing-id', required=True, help='PriceLabs listing ID')
 @click.option('--rates-json', required=True, help='JSON string of rates in format: [{"date": "YYYY-MM-DD", "price": "123"}]')
-@click.option('--pms', default="cloudbeds", help='PMS system name')
-def cli(listing_id: str, rates_json: str, pms: str):
+@click.option('--pms', help='Optional PMS system name (if not provided, will be read from config)')
+def cli(listing_id: str, rates_json: str, pms: Optional[str] = None):
     """Push rates to PriceLabs from JSON input."""
     try:
         rates = json.loads(rates_json)
