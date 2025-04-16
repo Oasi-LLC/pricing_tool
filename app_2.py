@@ -940,6 +940,8 @@ with results_area:
                                 update_dict = {
                                     '_id': rate_id,
                                     'listing_id': listing_id,
+                                    COL_DATE: date,
+                                    COL_LIVE_RATE: row.get(COL_LIVE_RATE, 0.0),  # Include live rate
                                     COL_EDITABLE_PRICE_SRC: new_price,
                                     'Status': 'Adjusted'
                                 }
@@ -949,8 +951,12 @@ with results_area:
                                 print("\nAFTER ADJUSTMENT:")
                                 # Update the DataFrame with new prices before showing it
                                 for update in updates:
-                                    mask = (updated_selected_df[COL_LISTING_ID] == update['listing_id'])
+                                    mask = (
+                                        (updated_selected_df[COL_LISTING_ID] == update['listing_id']) & 
+                                        (updated_selected_df[COL_DATE] == update[COL_DATE])
+                                    )
                                     updated_selected_df.loc[mask, COL_EDITABLE_PRICE_SRC] = update[COL_EDITABLE_PRICE_SRC]
+                                    updated_selected_df.loc[mask, COL_LIVE_RATE] = update[COL_LIVE_RATE]  # Update live rate
                                 
                                 after_df = updated_selected_df[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
                                 after_df.columns = ['Listing ID', 'Date', 'New Price']
