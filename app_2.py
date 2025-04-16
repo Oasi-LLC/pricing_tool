@@ -164,33 +164,20 @@ def natural_sort_key_tier(tier_string):
 
 def apply_price_adjustment(current_price, adjustment_type, adjustment_amount):
     """Apply price adjustment based on type and amount"""
-    print(f"\n[DEBUG] Starting price adjustment:")
-    print(f"[DEBUG] Input - current_price: {current_price} ({type(current_price)})")
-    print(f"[DEBUG] Input - adjustment_type: {adjustment_type}")
-    print(f"[DEBUG] Input - adjustment_amount: {adjustment_amount} ({type(adjustment_amount)})")
-    
     try:
         current_price = float(current_price)
         adjustment_amount = float(adjustment_amount)
-        
-        print(f"[DEBUG] Converted - current_price: {current_price}")
-        print(f"[DEBUG] Converted - adjustment_amount: {adjustment_amount}")
         
         if adjustment_type == 'percentage':
             # Convert percentage to decimal and add to 1 for multiplication
             # e.g., 10% increase = 1.10, -10% decrease = 0.90
             multiplier = 1 + (adjustment_amount / 100)
             result = round(current_price * multiplier, 2)
-            print(f"[DEBUG] Percentage calculation - multiplier: {multiplier}")
-            print(f"[DEBUG] Percentage calculation - result: {result}")
             return result
         else:  # value
             result = round(current_price + adjustment_amount, 2)
-            print(f"[DEBUG] Value calculation - result: {result}")
             return result
     except (ValueError, TypeError) as e:
-        print(f"[DEBUG] Error in price adjustment: {e}")
-        print(f"[DEBUG] Returning original price: {current_price}")
         return current_price
 
 def clear_all_filter_states():
@@ -366,7 +353,6 @@ def calculate_derived_columns(df):
         if source_col in df.columns:
             df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(df[source_col], errors='coerce').fillna(0.0)
         else:
-            print(f"[DEBUG] Source column {source_col} not found. Available columns: {df.columns.tolist()}")
             df[COL_EDITABLE_PRICE_SRC] = 0.0
             
     return df
@@ -850,10 +836,6 @@ with results_area:
                         st.write("Preview of adjustments:")
                         preview_df = selected_for_preview[[COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_EDITABLE_PRICE_SRC]].copy()
                         
-                        # Debug information before adjustment
-                        st.write("\n[DEBUG] Before adjustment:")
-                        st.write(f"Preview DataFrame head:\n{preview_df.head()}")
-                        
                         preview_df['New Price'] = preview_df[COL_EDITABLE_PRICE_SRC].apply(
                             lambda x: apply_price_adjustment(
                                 x, 
@@ -863,10 +845,6 @@ with results_area:
                         )
                         preview_df['Change'] = preview_df['New Price'] - preview_df[COL_EDITABLE_PRICE_SRC]
                         preview_df['Change %'] = (preview_df['Change'] / preview_df[COL_EDITABLE_PRICE_SRC] * 100).round(1)
-                        
-                        # Debug information after adjustment
-                        st.write("\n[DEBUG] After adjustment:")
-                        st.write(f"Preview DataFrame with new prices:\n{preview_df.head()}")
                         
                         # Format and display preview
                         st.dataframe(
@@ -914,10 +892,8 @@ with results_area:
                             updated_selected_df = selected_df.copy()
                             
                             # Create comparison table of before values
-                            print("\nBEFORE ADJUSTMENT:")
                             comparison_df = selected_df[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
                             comparison_df.columns = ['Listing ID', 'Date', 'Original Price']
-                            print(comparison_df.to_string(index=False))
                             
                             # Store original indices to maintain order
                             original_indices = selected_df.index.tolist()
@@ -948,7 +924,6 @@ with results_area:
                                 updates.append(update_dict)
                             
                             if updates:
-                                print("\nAFTER ADJUSTMENT:")
                                 # Update the DataFrame with new prices before showing it
                                 for update in updates:
                                     mask = (
@@ -960,7 +935,6 @@ with results_area:
                                 
                                 after_df = updated_selected_df[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
                                 after_df.columns = ['Listing ID', 'Date', 'New Price']
-                                print(after_df.to_string(index=False))
                                 
                                 if backend_interface.update_rates(updates):
                                     # Update the edited_selection DataFrame with new prices
@@ -977,15 +951,8 @@ with results_area:
                                     # Update filtered data
                                     update_filtered_data()
                                     
-                                    # Show what's in the selected table
-                                    print("\nSELECTED TABLE DATA:")
-                                    selected_table = edited_selection[[COL_LISTING_ID, COL_DATE, COL_EDITABLE_PRICE_SRC]].copy()
-                                    selected_table.columns = ['Listing ID', 'Date', 'Table Price']
-                                    print(selected_table.to_string(index=False))
-                                    
                                     st.toast(f"{len(updates)} rate adjustment(s) logged.", icon="✏️")
                                 else:
-                                    print("[DEBUG] Backend update failed")
                                     st.error("Failed to log adjustments.")
                             
                                 st.session_state.show_adjust_modal = False
