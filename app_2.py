@@ -1027,20 +1027,35 @@ with results_area:
                     col1, col2 = st.columns([1, 1])
                     with col1:
                         if st.button("✅ Confirm Push", type="primary", key="confirm_push"):
-                            try:                                
-                                for listing_id, rates in st.session_state.rates_to_push.items():
-                                    success = push_rates_to_pricelabs(
-                                        listing_id=listing_id,
-                                        rates=rates
-                                    )
-                                    
-                                    if success:
-                                        st.success(f"✅ Pushed rates for {listing_id}")
-                                    else:
-                                        st.error(f"❌ Failed to push rates for {listing_id}")
+                            try:
+                                # Use push_rates_batch instead of individual calls
+                                results = push_rates_batch(st.session_state.rates_to_push)
+                                # Process results
+                                success_count = sum(1 for result in results.values() if result["success"])
+                                total_count = len(results)
+                                
+                                if success_count == total_count:
+                                    st.success(f"✅ Successfully pushed rates for all {total_count} listings")
+                                elif success_count > 0:
+                                    st.warning(f"⚠️ Partially successful: pushed rates for {success_count} out of {total_count} listings")
+                                    # Show detailed results for failed pushes
+                                    failed_listings = {
+                                        listing_id: result 
+                                        for listing_id, result in results.items() 
+                                        if not result["success"]
+                                    }
+                                    if failed_listings:
+                                        st.error("Failed listings:")
+                                        for listing_id, result in failed_listings.items():
+                                            st.error(f"❌ {listing_id}: {result.get('error_detail', result['message'])}")
+                                else:
+                                    st.error(f"❌ Failed to push rates for all {total_count} listings")
+                                    # Show error details for all failures
+                                    for listing_id, result in results.items():
+                                        st.error(f"❌ {listing_id}: {result.get('error_detail', result['message'])}")
                                         
                             except Exception as e:
-                                st.error(f"Error during push: {str(e)}")
+                                st.error(f"Error during batch push: {str(e)}")
                                 import traceback
                                 st.code(traceback.format_exc(), language="python")
                     

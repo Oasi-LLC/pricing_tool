@@ -50,7 +50,7 @@ def push_rates_to_pricelabs(
     listing_id: str,
     rates: List[Dict[str, Union[str, float, int]]],
     pms: Optional[str] = None
-) -> bool:
+) -> Dict[str, Union[bool, str, List[Dict], int, Dict]]:
     """
     Push rates to PriceLabs API for a specific listing.
 
@@ -61,7 +61,13 @@ def push_rates_to_pricelabs(
         pms: Optional PMS system name (if not provided, will be read from config)
 
     Returns:
-        bool: True if successful, False otherwise
+        Dict with the following keys:
+            success (bool): True if successful, False otherwise
+            message (str): Description of the result or error
+            rates_pushed (List[Dict]): List of rates that were successfully pushed
+            total_rates (int): Total number of rates attempted to push
+            error_detail (str, optional): Detailed error message if any
+            response (Dict, optional): Raw API response when available
     """
     try:
         # Initialize API client
@@ -89,31 +95,55 @@ def push_rates_to_pricelabs(
             formatted_overrides.append(override)
 
         if not formatted_overrides:
-            logger.error("No valid rates to push")
-            return False
+            return {
+                "success": False,
+                "message": "No valid rates to push",
+                "rates_pushed": [],
+                "total_rates": len(rates),
+                "error_detail": "All rates were invalid or missing required fields",
+            }
 
         # Push to PriceLabs
         logger.info(f"Pushing {len(formatted_overrides)} rates for listing {listing_id}")
-        api_client.update_listing_overrides(
+        response = api_client.update_listing_overrides(
             listing_id=listing_id,
             overrides=formatted_overrides,
             pms=pms
         )
         
         logger.info(f"Successfully pushed rates for listing {listing_id}")
-        return True
+        return {
+            "success": True,
+            "message": f"Successfully pushed {len(formatted_overrides)} rates",
+            "rates_pushed": formatted_overrides,
+            "total_rates": len(rates),
+        }
 
     except PriceLabsAPIError as e:
-        logger.error(f"PriceLabs API error for listing {listing_id}: {str(e)}")
-        return False
+        error_msg = f"PriceLabs API error for listing {listing_id}: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "message": "API error occurred",
+            "rates_pushed": [],
+            "total_rates": len(rates),
+            "error_detail": error_msg,
+        }
     except Exception as e:
-        logger.error(f"Unexpected error pushing rates for listing {listing_id}: {str(e)}")
-        return False
+        error_msg = f"Unexpected error pushing rates for listing {listing_id}: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "message": "Unexpected error occurred",
+            "rates_pushed": [],
+            "total_rates": len(rates),
+            "error_detail": error_msg,
+        }
 
 def push_rates_batch(
     rates_data: Dict[str, List[Dict]],
     pms: Optional[str] = None
-) -> Dict[str, bool]:
+) -> Dict[str, Dict]:
     """
     Push rates for multiple listings in batch.
 
@@ -123,20 +153,24 @@ def push_rates_batch(
         pms: Optional PMS system name (if not provided, will be read from config for each listing)
 
     Returns:
-        Dict[str, bool]: Results for each listing ID (True if successful)
+        Dict[str, Dict]: Results for each listing ID containing detailed push information
     """
     results = {}
+    total_success = 0
+    total_listings = len(rates_data)
+    
     for listing_id, rates in rates_data.items():
-        success = push_rates_to_pricelabs(
+        result = push_rates_to_pricelabs(
             listing_id=listing_id,
             rates=rates,
             pms=pms
         )
-        results[listing_id] = success
+        results[listing_id] = result
+        if result["success"]:
+            total_success += 1
     
     # Log summary
-    success_count = sum(1 for success in results.values() if success)
-    logger.info(f"Batch push completed. {success_count}/{len(results)} listings successful")
+    logger.info(f"Batch push completed. {total_success}/{total_listings} listings successful")
     
     return results
 
@@ -156,16 +190,16 @@ def cli(listing_id: str, rates_json: str, pms: Optional[str] = None):
         exit(1)
 
     # Push rates
-    success = push_rates_to_pricelabs(
+    result = push_rates_to_pricelabs(
         listing_id=listing_id,
         rates=rates,
         pms=pms
     )
 
-    if success:
-        click.echo(f"Successfully pushed {len(rates)} rates for listing {listing_id}")
+    if result["success"]:
+        click.echo(f"Successfully pushed {result['total_rates']} rates for listing {listing_id}")
     else:
-        click.echo(f"Failed to push rates for listing {listing_id}", err=True)
+        click.echo(f"Failed to push rates for listing {listing_id}: {result['message']}", err=True)
         exit(1)
 
 if __name__ == "__main__":
