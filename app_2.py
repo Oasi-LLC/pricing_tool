@@ -675,14 +675,14 @@ with results_area:
                         'editable': False
                     })
 
-        # Set the columnDefs directly in grid options
-        gb.configure_grid_options(columnDefs=column_defs)
+        grid_options = gb.build()
+        grid_options['columnDefs'] = column_defs
 
         # Create grid with filtered columns and proper configuration
         grid_key = 'main_grid_' + ('initial' if not st.session_state.initial_load_complete else 'updated')
         grid_response = AgGrid(
             display_df,
-            gridOptions=gb.build(),
+            gridOptions=grid_options,
             update_mode=GridUpdateMode.MODEL_CHANGED | GridUpdateMode.SELECTION_CHANGED,
             fit_columns_on_grid_load=True,
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
