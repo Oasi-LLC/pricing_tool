@@ -170,7 +170,7 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     pace = 0.0 # Placeholder
                     calculated_tier = None # Initialize calculated tier
 
-                    # --- Check if Fully Booked (Vacant Units = 0) ---
+                    # --- Check if Booked/Blocked ---
                     if (listing_id, current_date_str) in booked_blocked_set:
                         flag = '🔒 Booked'
                         # Skip rate calculation, set rates to None or 0? Let's use None.

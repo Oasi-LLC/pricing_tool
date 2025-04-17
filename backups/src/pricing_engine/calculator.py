@@ -196,12 +196,7 @@ def _check_condition(
     listing_id: str,
     booked_blocked_set: Set[Tuple[str, str]]
 ) -> bool:
-    """
-    Checks if a single condition is met.
-    
-    Note: The booked_blocked_set contains only FULLY booked listings (Vacant Units = 0),
-    not partially booked listings.
-    """
+    """Checks if a single condition is met."""
     if condition_config is None:
         return True # Default action condition
 

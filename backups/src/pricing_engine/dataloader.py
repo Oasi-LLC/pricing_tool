@@ -143,7 +143,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
             pl_daily_path,
             parse_dates=['Date'], # Use the actual 'Date' column name from CSV
             # Ensure 'Listing ID' column exists in your CSV and is used here
-            usecols=['Date', 'Listing ID', 'No. Booked', 'No. Blocked', 'Vacant Units'], # Added 'Vacant Units' column
+            usecols=['Date', 'Listing ID', 'No. Booked', 'No. Blocked'], # Use fb1 names
             dtype={'Listing ID': str} # Ensure Listing ID is read as string
         )
 
@@ -151,16 +151,14 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
         # UPDATED: Use actual fb1 column names
         pl_df['No. Booked'] = pd.to_numeric(pl_df['No. Booked'], errors='coerce').fillna(0)
         pl_df['No. Blocked'] = pd.to_numeric(pl_df['No. Blocked'], errors='coerce').fillna(0)
-        pl_df['Vacant Units'] = pd.to_numeric(pl_df['Vacant Units'], errors='coerce').fillna(0)
 
         # Use 'Date' column for validation
         if not pd.api.types.is_datetime64_any_dtype(pl_df['Date']):
              raise ValueError("Could not parse 'Date' column as datetime.")
 
         # Filter for relevant rows
-        # UPDATED: Only consider listings as "booked" when they have zero vacant units
-        # This ensures only completely booked listings (not partially booked) are flagged
-        relevant_pl = pl_df[ pl_df['Vacant Units'] == 0 ].copy()
+        # UPDATED: Use actual fb1 column names
+        relevant_pl = pl_df[ (pl_df['No. Booked'] > 0) | (pl_df['No. Blocked'] > 0) ].copy()
 
         # Process into the set
         for _, row in relevant_pl.iterrows():
@@ -171,7 +169,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
                 # Directly add the ID to the set
                 booked_blocked_set.add((listing_id, date_str))
 
-        print(f"Loaded PL Daily: {pl_daily_path}, {len(booked_blocked_set)} fully booked entries processed.")
+        print(f"Loaded PL Daily: {pl_daily_path}, {len(booked_blocked_set)} booked/blocked entries processed.")
     except FileNotFoundError:
         raise FileNotFoundError(f"PL Daily file not found: {pl_daily_path}")
     except KeyError as e:
