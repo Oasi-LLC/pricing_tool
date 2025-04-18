@@ -37,6 +37,8 @@ COL_STATUS = 'Status'
 COL_OCC_CURR = 'Occ% (Curr)'
 COL_OCC_HIST = "Occ% (Hist)"
 COL_PACE = "Pace"
+COL_MIN_STAY = "Min Stay"
+COL_EDITABLE_MIN_STAY = "Editable Min Stay"
 
 # Source column names
 COL_BASELINE_SRC = "Baseline"
@@ -44,6 +46,7 @@ COL_SUGGESTED_SRC = "Suggested"
 COL_EDITABLE_PRICE_SRC = "Editable Price"
 COL_PROPERTY_SRC = "property"
 COL_CALCULATED_TIER_SRC = "calculated_tier"
+COL_EDITABLE_MIN_STAY_SRC = "Editable Min Stay"
 
 # Hidden columns (updated to include all columns we don't want to show)
 HIDDEN_COLS = [
@@ -62,7 +65,9 @@ HIDDEN_COLS = [
 
 # Core visible columns
 CORE_COLS = [
-    COL_SELECT, COL_DATE, COL_PROPERTY, COL_TIER, COL_DAY_OF_WEEK, COL_OCC_CURR,
+    COL_SELECT, COL_DATE, COL_PROPERTY, COL_TIER, COL_DAY_OF_WEEK,
+    COL_MIN_STAY,
+    COL_OCC_CURR,
     COL_LIVE_RATE, COL_SUGGESTED, COL_DELTA, COL_EDITABLE_PRICE,
     COL_FLAG, COL_STATUS
 ]
@@ -72,10 +77,12 @@ DEFAULT_VISIBLE_COLUMNS = [
     COL_SELECT,
     COL_ID,
     COL_DATE,
-    COL_PROPERTY,  # This is 'Unit Pool'
+    COL_PROPERTY,
     COL_LISTING_NAME,
     COL_TIER,
     COL_DAY_OF_WEEK,
+    COL_MIN_STAY,
+    COL_EDITABLE_MIN_STAY,
     COL_OCC_CURR,
     COL_LIVE_RATE,
     COL_SUGGESTED,
@@ -100,7 +107,9 @@ COLUMN_DISPLAY_NAMES = {
     COL_DELTA: "Delta %",
     COL_EDITABLE_PRICE: "Editable Rate $",
     COL_FLAG: "Flag",
-    COL_STATUS: "Status"
+    COL_STATUS: "Status",
+    COL_MIN_STAY: "Min Stay",
+    COL_EDITABLE_MIN_STAY: "Editable Min Stay"
 }
 
 # --- Session State Initialization ---
@@ -290,14 +299,22 @@ def load_and_prepare_data(property_selection, start_date, end_date):
                 merged_df[COL_LIVE_RATE] = 0.0
             if COL_SUGGESTED not in merged_df.columns and 'Suggested' in merged_df.columns:
                 merged_df.rename(columns={'Suggested': COL_SUGGESTED}, inplace=True)
+            if 'min_stay' in merged_df.columns:
+                merged_df.rename(columns={'min_stay': COL_MIN_STAY}, inplace=True)
+            if COL_MIN_STAY not in merged_df.columns:
+                merged_df[COL_MIN_STAY] = 1  # Default minimum stay of 1
         else:
             merged_df = generated_df.copy()
             merged_df[COL_LIVE_RATE] = 0.0
+            merged_df[COL_MIN_STAY] = 1  # Default minimum stay of 1
         
         # Initialize editable price based on current toggle state
         toggle_value = st.session_state.get('rate_source_toggle', 'Use Live Rate')
         source_col = COL_LIVE_RATE if toggle_value == 'Use Live Rate' else COL_SUGGESTED
         merged_df[COL_EDITABLE_PRICE_SRC] = pd.to_numeric(merged_df[source_col], errors='coerce').fillna(0.0)
+        
+        # Initialize editable min stay with current min stay values
+        merged_df[COL_EDITABLE_MIN_STAY_SRC] = pd.to_numeric(merged_df[COL_MIN_STAY], errors='coerce').fillna(1)
         
         # Calculate all derived columns
         merged_df = calculate_derived_columns(merged_df)
@@ -315,8 +332,8 @@ def process_live_rates(property_name):
         try:
             return pd.read_csv(
                 live_rates_path,
-                usecols=['listing_id', 'date', 'price'],
-                dtype={'listing_id': str, 'date': str, 'price': float}
+                usecols=['listing_id', 'date', 'price', 'min_stay'],
+                dtype={'listing_id': str, 'date': str, 'price': float, 'min_stay': 'Int64'}
             )
         except Exception as e:
             st.warning(f"Could not load live rates for {property_name}: {e}")
@@ -585,6 +602,8 @@ with results_area:
             COL_LISTING_NAME,
             COL_TIER,
             COL_DAY_OF_WEEK,
+            COL_MIN_STAY,
+            COL_EDITABLE_MIN_STAY,
             COL_OCC_CURR,
             COL_LIVE_RATE,
             COL_SUGGESTED,
@@ -668,6 +687,22 @@ with results_area:
                         'width': 200,
                         'editable': False
                     })
+                elif col == COL_MIN_STAY:
+                    column_defs.append({
+                        **base_config,
+                        'type': ["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        'precision': 0,
+                        'width': 100,
+                        'editable': False
+                    })
+                elif col == COL_EDITABLE_MIN_STAY:
+                    column_defs.append({
+                        **base_config,
+                        'type': ["numericColumn", "numberColumnFilter", "customNumericFormat"],
+                        'precision': 0,
+                        'width': 120,
+                        'editable': True
+                    })
                 else:
                     column_defs.append({
                         **base_config,
@@ -738,7 +773,8 @@ with results_area:
             else:
                 display_df = selected_df
             
-            display_columns = [COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_LISTING_NAME, COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE_SRC]
+            # Use the same columns as the main table, but exclude the Select column
+            display_columns = [col for col in DEFAULT_VISIBLE_COLUMNS if col != COL_SELECT]
             valid_columns = [col for col in display_columns if col in display_df.columns]
             
             # Add a unique key for the data editor based on selections
@@ -752,11 +788,18 @@ with results_area:
                 column_config={
                     COL_LISTING_ID: st.column_config.TextColumn("ID"),
                     COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
-                    COL_PROPERTY_SRC: st.column_config.TextColumn("Property"),
+                    COL_PROPERTY: st.column_config.TextColumn("Property"),
                     COL_LISTING_NAME: st.column_config.TextColumn("Listing Name"),
+                    COL_TIER: st.column_config.TextColumn("Tier"),
+                    COL_DAY_OF_WEEK: st.column_config.TextColumn("Day"),
+                    COL_MIN_STAY: st.column_config.NumberColumn("Min Stay", format="%.0f", required=True, min_value=1),
+                    COL_OCC_CURR: st.column_config.NumberColumn("Occ% Current", format="%.1f%%"),
                     COL_LIVE_RATE: st.column_config.NumberColumn("Live Rate $", format="$%.2f"),
                     COL_SUGGESTED: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f"),
-                    COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0)
+                    COL_DELTA: st.column_config.NumberColumn("Delta %", format="%.1f%%"),
+                    COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0),
+                    COL_FLAG: st.column_config.TextColumn("Flag"),
+                    COL_STATUS: st.column_config.TextColumn("Status")
                 }
             )
 
