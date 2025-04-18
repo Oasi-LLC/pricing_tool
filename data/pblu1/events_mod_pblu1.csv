@@ -1,0 +1,106 @@
+Date,Name,Multiplier,Weekday
+1/1/25,New Year's Day,1.2,Wednesday
+1/16/25,Thursday before Martin Luther King Jr. Day,1.1,Thursday
+1/17/25,Friday before Martin Luther King Jr. Day,1.3,Friday
+1/18/25,Saturday before Martin Luther King Jr. Day,1.3,Saturday
+1/19/25,Sunday before Martin Luther King Jr. Day,1.2,Sunday
+1/20/25,Martin Luther King Jr. Day,1.2,Monday
+2/13/25,Thursday before Presidents' Day,1.1,Thursday
+2/14/25,Valentine's Day,1.3,Friday
+2/15/25,Saturday before Presidents' Day,1.3,Saturday
+2/16/25,Sunday before Presidents' Day,1.2,Sunday
+2/17/25,Presidents' Day,1.2,Monday
+3/6/25,Spring Break,1.15,Thursday
+3/7/25,Spring Break,1.2,Friday
+3/8/25,Spring Break,1.2,Saturday
+3/9/25,Spring Break,1.15,Sunday
+3/10/25,Spring Break,1.3,Monday
+3/11/25,Spring Break,1.3,Tuesday
+3/12/25,Spring Break,1.3,Wednesday
+3/13/25,Spring Break,1.15,Thursday
+3/14/25,Spring Break,1.3,Friday
+3/15/25,Spring Break,1.3,Saturday
+3/16/25,Spring Break,1.2,Sunday
+5/22/25,Thursday before Memorial Day,1.1,Thursday
+5/23/25,Friday before Memorial Day,1.3,Friday
+5/24/25,Saturday before Memorial Day,1.3,Saturday
+5/25/25,Sunday before Memorial Day,1.2,Sunday
+5/26/25,Memorial Day,1.2,Monday
+7/3/25,Day before Independence Day,1.3,Thursday
+7/4/25,Independence Day,1.3,Friday
+7/4/25,Day after Independence Day,1.3,Saturday
+8/28/25,Thursday before Labor Day,1.1,Thursday
+8/29/25,Friday before Labor Day,1.3,Friday
+8/30/25,Saturday before Labor Day,1.3,Saturday
+8/31/25,Sunday before Labor Day,1.2,Sunday
+9/1/25,Labor Day,1.2,Monday
+11/11/25,Veterans Day,1.1,Tuesday
+11/26/25,Wednesday before Thanksgiving,1.2,Wednesday
+11/27/25,Thanksgiving Day,1.3,Thursday
+11/28/25,Friday after Thanksgiving Day,1.15,Friday
+11/29/25,Saturday after Thanksgiving Day,1.15,Saturday
+12/23/25,Christmas Period,1.3,Tuesday
+12/24/25,Christmas Period,1.3,Wednesday
+12/25/25,Christmas Day,1.3,Thursday
+12/26/25,Christmas Period,1.15,Friday
+12/27/25,Christmas Period,1.15,Saturday
+12/28/25,Christmas Period,1.15,Sunday
+12/29/25,Christmas Period,1.15,Monday
+12/30/25,Christmas Period,1.35,Tuesday
+12/31/25,Christmas Period,1.75,Wednesday
+1/1/26,New Year's Day,1.35,Thursday
+1/2/26,Christmas Period,1.3,Friday
+1/3/26,Christmas Period,1.3,Saturday
+1/4/26,Christmas Period,1.1,Sunday
+1/15/26,Thursday before Martin Luther King Jr. Day,1.1,Thursday
+1/16/26,Friday before Martin Luther King Jr. Day,1.3,Friday
+1/17/26,Saturday before Martin Luther King Jr. Day,1.3,Saturday
+1/18/26,Sunday before Martin Luther King Jr. Day,1.2,Sunday
+1/19/26,Martin Luther King Jr. Day,1.2,Monday
+2/12/26,Thursday before Presidents' Day,1.1,Thursday
+2/13/26,Friday before Presidents' Day,1.3,Friday
+2/14/26,Valentine's Day,1.4,Saturday
+2/15/26,Sunday before Presidents' Day,1.2,Sunday
+2/16/26,Presidents' Day,1.2,Monday
+3/5/26,Spring Break,1.3,Thursday
+3/6/26,Spring Break,1.3,Friday
+3/7/26,Spring Break,1.3,Saturday
+3/8/26,Spring Break,1.3,Sunday
+3/9/26,Spring Break,1.3,Monday
+3/10/26,Spring Break,1.3,Tuesday
+3/11/26,Spring Break,1.3,Wednesday
+3/12/26,Spring Break,1.3,Thursday
+3/13/26,Spring Break,1.3,Friday
+3/14/26,Spring Break,1.3,Saturday
+3/15/26,Spring Break,1.3,Sunday
+5/21/26,Thursday before Memorial Day,1.1,Thursday
+5/22/26,Friday before Memorial Day,1.3,Friday
+5/23/26,Saturday before Memorial Day,1.3,Saturday
+5/24/26,Sunday before Memorial Day,1.2,Sunday
+5/25/26,Memorial Day,1.2,Monday
+7/2/26,Thursday before Independence Day,1.2,Thursday
+7/3/26,Firday before Independence Day,1.3,Friday
+7/4/26,Independence Day,1.4,Saturday
+7/5/26,Sunday after Independence Day,1.1,Sunday
+9/3/26,Thursday before Labor Day,1.1,Thursday
+9/4/26,Friday before Labor Day,1.3,Friday
+9/5/26,Saturday before Labor Day,1.3,Saturday
+9/6/26,Sunday before Labor Day,1.2,Sunday
+9/7/26,Labor Day,1.2,Monday
+11/11/26,Veterans Day,1.2,Wednesday
+11/25/26,Wednesday before Thanksgiving,1.2,Wednesday
+11/26/26,Thanksgiving Day,1.3,Thursday
+11/27/26,Friday after Thanksgiving Day,1.15,Friday
+11/28/26,Saturday after Thanksgiving Day,1.15,Saturday
+12/23/26,Christmas Period,1.3,Wednesday
+12/24/26,Christmas Period,1.4,Thursday
+12/25/26,Christmas Day,1.3,Friday
+12/26/26,Christmas Period,1.3,Saturday
+12/27/26,Christmas Period,1.2,Sunday
+12/28/26,Christmas Period,1.2,Monday
+12/29/26,Christmas Period,1.2,Tuesday
+12/30/26,Christmas Period,1.3,Wednesday
+12/31/26,Christmas Period,1.6,Thursday
+1/1/27,Christmas Period,1.4,Friday
+1/2/27,Christmas Period,1.15,Saturday
+1/3/27,Christmas Period,1.15,Sunday
