@@ -135,10 +135,14 @@ if 'initial_load_complete' not in st.session_state:
     st.session_state.initial_load_complete = False
 if 'show_adjust_modal' not in st.session_state:
     st.session_state.show_adjust_modal = False
+if 'show_los_adjust_modal' not in st.session_state:  # Add LOS modal state
+    st.session_state.show_los_adjust_modal = False
 if 'adjustment_type' not in st.session_state:
     st.session_state.adjustment_type = 'value'
 if 'adjustment_amount' not in st.session_state:
     st.session_state.adjustment_amount = 0.0
+if 'los_adjustment_amount' not in st.session_state:  # Add LOS adjustment amount
+    st.session_state.los_adjustment_amount = 1
 
 # Filter defaults
 filter_defaults = {
@@ -827,15 +831,27 @@ with results_area:
         current_action_df = st.session_state.base_data
         
         with action_cols[0]:
-            if st.button("Adjust Selected", key='adjust_button'):
-                if current_action_df is not None:
-                    selected_for_action = pd.DataFrame(grid_response.selected_rows)
-                    if not selected_for_action.empty:
-                        st.session_state.show_adjust_modal = True
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Adjust Selected", key='adjust_button'):
+                    if current_action_df is not None:
+                        selected_for_action = pd.DataFrame(grid_response.selected_rows)
+                        if not selected_for_action.empty:
+                            st.session_state.show_adjust_modal = True
+                        else:
+                            st.warning("No rows selected for adjustment.")
                     else:
-                        st.warning("No rows selected for adjustment.")
-                else:
-                    st.warning("No data available to adjust.")
+                        st.warning("No data available to adjust.")
+            with col2:
+                if st.button("Adjust LOS", key='adjust_los_button'):
+                    if current_action_df is not None:
+                        selected_for_action = pd.DataFrame(grid_response.selected_rows)
+                        if not selected_for_action.empty:
+                            st.session_state.show_los_adjust_modal = True
+                        else:
+                            st.warning("No rows selected for LOS adjustment.")
+                    else:
+                        st.warning("No data available to adjust.")
 
             # Add adjustment modal
             if st.session_state.show_adjust_modal:
@@ -1022,6 +1038,121 @@ with results_area:
                             if cancel:
                                 st.session_state.show_adjust_modal = False
                                 st.rerun()
+
+            # Add LOS adjustment modal
+            if st.session_state.show_los_adjust_modal:
+                with st.form(key="los_adjustment_form"):
+                    st.subheader("Adjust Min Stay")
+                    
+                    # Direction and amount in separate columns
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        direction = st.radio(
+                            "Direction",
+                            options=['increase', 'decrease'],
+                            format_func=lambda x: 'Increase (+)' if x == 'increase' else 'Decrease (-)',
+                            horizontal=True,
+                            key='los_direction'
+                        )
+                    
+                    with col2:
+                        amount = st.number_input(
+                            "Adjustment Amount",
+                            min_value=1,
+                            value=1,
+                            step=1,
+                            format="%d",
+                            key='los_amount'
+                        )
+                    
+                    # Calculate actual adjustment amount based on direction
+                    st.session_state.los_adjustment_amount = -amount if direction == 'decrease' else amount
+                    
+                    # Show preview of adjustments
+                    selected_for_preview = pd.DataFrame(grid_response.selected_rows)
+                    if not selected_for_preview.empty:
+                        st.write("Preview of adjustments:")
+                        preview_df = selected_for_preview[[COL_LISTING_ID, COL_DATE, COL_PROPERTY_SRC, COL_EDITABLE_MIN_STAY]].copy()
+                        
+                        # Calculate new min stay values ensuring they don't go below 1
+                        preview_df['New Min Stay'] = preview_df[COL_EDITABLE_MIN_STAY].apply(
+                            lambda x: max(1, int(x) + st.session_state.los_adjustment_amount)
+                        )
+                        
+                        # Format and display preview
+                        st.dataframe(
+                            preview_df,
+                            column_config={
+                                COL_LISTING_ID: "ID",
+                                COL_DATE: "Date",
+                                COL_PROPERTY_SRC: "Property",
+                                COL_EDITABLE_MIN_STAY: st.column_config.NumberColumn(
+                                    "Current Min Stay",
+                                    format="%d"
+                                ),
+                                'New Min Stay': st.column_config.NumberColumn(
+                                    "New Min Stay",
+                                    format="%d"
+                                )
+                            },
+                            hide_index=True
+                        )
+                        
+                        # Form submit and cancel buttons
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            submit_text = f"Apply {direction.title()} by {amount}"
+                            submit = st.form_submit_button(
+                                submit_text,
+                                type="primary" if direction == 'increase' else "secondary"
+                            )
+                        with col2:
+                            cancel = st.form_submit_button("Cancel")
+                        
+                        if submit:
+                            updates = []
+                            # Create a copy of the data to update
+                            updated_selected_df = selected_df.copy()
+                            
+                            for idx, row in selected_df.iterrows():
+                                current_min_stay = int(row[COL_EDITABLE_MIN_STAY])
+                                new_min_stay = max(1, current_min_stay + st.session_state.los_adjustment_amount)
+                                
+                                rate_id = row.get('_id')
+                                listing_id = row.get(COL_LISTING_ID)
+                                date = row.get(COL_DATE)
+                                
+                                update_dict = {
+                                    '_id': rate_id,
+                                    'listing_id': listing_id,
+                                    COL_DATE: date,
+                                    COL_EDITABLE_MIN_STAY: new_min_stay,
+                                    'Status': 'LOS Adjusted'
+                                }
+                                updates.append(update_dict)
+                            
+                            if updates:
+                                # Update the DataFrame with new min stay values
+                                for update in updates:
+                                    mask = (
+                                        (updated_selected_df[COL_LISTING_ID] == update['listing_id']) & 
+                                        (updated_selected_df[COL_DATE] == update[COL_DATE])
+                                    )
+                                    updated_selected_df.loc[mask, COL_EDITABLE_MIN_STAY] = update[COL_EDITABLE_MIN_STAY]
+                                
+                                if backend_interface.update_rates(updates):
+                                    # Store the updated dataframe in session state
+                                    st.session_state.updated_selected_df = updated_selected_df.copy()
+                                    
+                                    # Update filtered data
+                                    update_filtered_data()
+                                    
+                                    st.toast(f"{len(updates)} min stay adjustment(s) logged.", icon="✏️")
+                                else:
+                                    st.error("Failed to log adjustments.")
+                            
+                                st.session_state.show_los_adjust_modal = False
 
         # with action_cols[1]:
         #     if st.button("Approve Selected", key='approve_button'):
