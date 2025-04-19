@@ -92,6 +92,9 @@ def push_rates_to_pricelabs(
                 "price_type": "fixed",
                 "currency": rate.get("currency", "USD")
             }
+            # Add min_stay if it exists in the rate data
+            if "min_stay" in rate:
+                override["min_stay"] = int(rate["min_stay"])
             formatted_overrides.append(override)
 
         if not formatted_overrides:

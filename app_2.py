@@ -775,31 +775,42 @@ with results_area:
             
             # Use the same columns as the main table, but exclude the Select column
             display_columns = [col for col in DEFAULT_VISIBLE_COLUMNS if col != COL_SELECT]
+            # Ensure listing_id is included in valid columns
+            if COL_LISTING_ID not in display_columns:
+                display_columns.append(COL_LISTING_ID)
             valid_columns = [col for col in display_columns if col in display_df.columns]
             
             # Add a unique key for the data editor based on selections
             editor_key = f"selection_editor_{','.join(sorted(selected_ids))}"
             
+            # Define editable columns
+            editable_columns = [COL_EDITABLE_PRICE_SRC, COL_EDITABLE_MIN_STAY]
+            
+            # Ensure listing_id is in the DataFrame
+            if COL_LISTING_ID not in display_df.columns:
+                display_df[COL_LISTING_ID] = display_df.index
+            
             edited_selection = st.data_editor(
                 display_df[valid_columns],
                 hide_index=True,
-                disabled=[col for col in valid_columns if col != COL_EDITABLE_PRICE_SRC],
+                disabled=[col for col in valid_columns if col not in editable_columns],
                 key=editor_key,
                 column_config={
-                    COL_LISTING_ID: st.column_config.TextColumn("ID"),
-                    COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
-                    COL_PROPERTY: st.column_config.TextColumn("Property"),
-                    COL_LISTING_NAME: st.column_config.TextColumn("Listing Name"),
-                    COL_TIER: st.column_config.TextColumn("Tier"),
-                    COL_DAY_OF_WEEK: st.column_config.TextColumn("Day"),
-                    COL_MIN_STAY: st.column_config.NumberColumn("Min Stay", format="%.0f", required=True, min_value=1),
-                    COL_OCC_CURR: st.column_config.NumberColumn("Occ% Current", format="%.1f%%"),
-                    COL_LIVE_RATE: st.column_config.NumberColumn("Live Rate $", format="$%.2f"),
-                    COL_SUGGESTED: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f"),
-                    COL_DELTA: st.column_config.NumberColumn("Delta %", format="%.1f%%"),
+                    COL_LISTING_ID: st.column_config.TextColumn("ID", disabled=True),
+                    COL_DATE: st.column_config.DateColumn("Date", format="YYYY-MM-DD", disabled=True),
+                    COL_PROPERTY: st.column_config.TextColumn("Property", disabled=True),
+                    COL_LISTING_NAME: st.column_config.TextColumn("Listing Name", disabled=True),
+                    COL_TIER: st.column_config.TextColumn("Tier", disabled=True),
+                    COL_DAY_OF_WEEK: st.column_config.TextColumn("Day", disabled=True),
+                    COL_MIN_STAY: st.column_config.NumberColumn("Min Stay", format="%.0f", required=True, min_value=1, disabled=True),
+                    COL_EDITABLE_MIN_STAY: st.column_config.NumberColumn("Editable Min Stay", format="%.0f", required=True, min_value=1),
+                    COL_OCC_CURR: st.column_config.NumberColumn("Occ% Current", format="%.1f%%", disabled=True),
+                    COL_LIVE_RATE: st.column_config.NumberColumn("Live Rate $", format="$%.2f", disabled=True),
+                    COL_SUGGESTED: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f", disabled=True),
+                    COL_DELTA: st.column_config.NumberColumn("Delta %", format="%.1f%%", disabled=True),
                     COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0),
-                    COL_FLAG: st.column_config.TextColumn("Flag"),
-                    COL_STATUS: st.column_config.TextColumn("Status")
+                    COL_FLAG: st.column_config.TextColumn("Flag", disabled=True),
+                    COL_STATUS: st.column_config.TextColumn("Status", disabled=True)
                 }
             )
 
@@ -1057,10 +1068,14 @@ with results_area:
                         for listing_id, group in edited_selection.groupby(COL_LISTING_ID):
                             selected_rates_dict[listing_id] = []
                             for _, row in group.iterrows():
-                                selected_rates_dict[listing_id].append({
+                                rate_data = {
                                     "date": row[COL_DATE],
                                     "price": row[COL_EDITABLE_PRICE_SRC]
-                                })
+                                }
+                                # Add min_stay if it exists and is different from default
+                                if COL_EDITABLE_MIN_STAY in row and pd.notna(row[COL_EDITABLE_MIN_STAY]):
+                                    rate_data["min_stay"] = int(row[COL_EDITABLE_MIN_STAY])
+                                selected_rates_dict[listing_id].append(rate_data)
                         # Store in session state
                         st.session_state.rates_to_push = selected_rates_dict
                         st.session_state.show_push_confirm = True
@@ -1072,7 +1087,26 @@ with results_area:
             if st.session_state.show_push_confirm and st.session_state.rates_to_push:
                 with st.expander("Review and Confirm Push", expanded=True):
                     st.write("The following rates will be pushed:")
-                    st.json(st.session_state.rates_to_push)
+                    # Create a more readable display of the rates
+                    display_data = []
+                    for listing_id, rates in st.session_state.rates_to_push.items():
+                        for rate in rates:
+                            display_data.append({
+                                "Listing ID": listing_id,
+                                "Date": rate["date"],
+                                "Price": f"${rate['price']:.2f}",
+                                "Min Stay": rate.get("min_stay", "Default")
+                            })
+                    st.dataframe(
+                        pd.DataFrame(display_data),
+                        hide_index=True,
+                        column_config={
+                            "Listing ID": st.column_config.TextColumn("Listing ID"),
+                            "Date": st.column_config.DateColumn("Date", format="YYYY-MM-DD"),
+                            "Price": st.column_config.TextColumn("Price"),
+                            "Min Stay": st.column_config.TextColumn("Min Stay")
+                        }
+                    )
                     
                     col1, col2 = st.columns([1, 1])
                     with col1:
@@ -1085,9 +1119,9 @@ with results_area:
                                 total_count = len(results)
                                 
                                 if success_count == total_count:
-                                    st.success(f"✅ Successfully pushed rates for all {total_count} listings")
+                                    st.success(f"✅ Successfully pushed rates and LOS for all {total_count} listings")
                                 elif success_count > 0:
-                                    st.warning(f"⚠️ Partially successful: pushed rates for {success_count} out of {total_count} listings")
+                                    st.warning(f"⚠️ Partially successful: pushed rates and LOS for {success_count} out of {total_count} listings")
                                     # Show detailed results for failed pushes
                                     failed_listings = {
                                         listing_id: result 
