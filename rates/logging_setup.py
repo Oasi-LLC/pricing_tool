@@ -83,17 +83,18 @@ def log_price_update(logger, listing_id: str, listing_name: str, pms_name: str,
     })
 
 def log_error(logger, listing_id: str, listing_name: str, pms_name: str,
-              start_date: str, end_date: str, old_price: float, new_price: float,
-              currency: str, error_reason: str):
-    """Log an error with detailed information"""
-    logger.error("", extra={
-        'listing_id': listing_id,
-        'listing_name': listing_name,
-        'pms_name': pms_name,
-        'start_date': start_date,
-        'end_date': end_date,
-        'old_price': f"${old_price:.2f}",
-        'new_price': f"${new_price:.2f}",
-        'currency': currency,
+              error_reason: str, start_date: str = None, end_date: str = None, 
+              old_price: float = None, new_price: float = None, currency: str = None):
+    """Log an error with detailed information. Some fields are optional."""
+    log_data = {
+        'listing_id': listing_id if listing_id else 'N/A',
+        'listing_name': listing_name if listing_name else 'N/A',
+        'pms_name': pms_name if pms_name else 'N/A',
+        'start_date': start_date if start_date else 'N/A',
+        'end_date': end_date if end_date else 'N/A',
+        'old_price': f"{old_price:.2f}" if old_price is not None else 'N/A', # Format only if present
+        'new_price': f"{new_price:.2f}" if new_price is not None else 'N/A', # Format only if present
+        'currency': currency if currency else 'N/A',
         'error_reason': error_reason
-    }) 
+    }
+    logger.error("Error occurred", extra=log_data) 

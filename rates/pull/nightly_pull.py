@@ -7,6 +7,7 @@ import logging
 import logging.handlers # Added for FileHandler
 from pathlib import Path
 import sys
+import time # Add this import
 from typing import List, Dict, Optional
 
 # Determine project root relative to this script's location (rates/pull/nightly_pull.py)
@@ -144,6 +145,7 @@ def run_nightly_pull():
 
                 try:
                     # Fetch all overrides for the listing
+                    time.sleep(1) # Add a 1-second delay before the API call
                     overrides_response = api_client.get_listing_overrides(listing_id, pms=property_pms)
                     all_listing_overrides = overrides_response.get('overrides', [])
                     logger.debug(f"Received {len(all_listing_overrides)} total overrides for {listing_id}.")
@@ -190,6 +192,7 @@ def run_nightly_pull():
                         listing_id=listing_id,
                         listing_name=listing_name,
                         pms_name=property_pms
+                        # Removed args no longer needed here: start_date, end_date, old_price, new_price, currency
                         # Add other relevant fields if needed/available
                     )
                 except Exception as e:
@@ -201,6 +204,7 @@ def run_nightly_pull():
                         listing_id=listing_id,
                         listing_name=listing_name,
                         pms_name=property_pms
+                        # Removed args no longer needed here: start_date, end_date, old_price, new_price, currency
                     )
 
             # --- Save Property Data to CSV ---
