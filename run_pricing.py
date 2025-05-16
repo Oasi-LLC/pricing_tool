@@ -32,6 +32,56 @@ def load_config(config_path: Path) -> dict:
         print(f"Error parsing YAML file {config_path}: {e}")
         sys.exit(1)
 
+def calculate_urgency_band(current_date, today, property_config):
+    """Calculate urgency band based on property configuration."""
+    # Get days until target date
+    days_until = (current_date - today).days
+    print(f"DEBUG: Days until {current_date}: {days_until}")
+    
+    # Get urgency definitions from property config
+    urgency_definitions = property_config.get('urgency_band_definitions', [])
+    print(f"DEBUG: Urgency definitions: {urgency_definitions}")
+    
+    # Find matching urgency band
+    for band in urgency_definitions:
+        if band['min_days'] <= days_until <= band['max_days']:
+            print(f"DEBUG: Found matching band: {band['label']} for {days_until} days")
+            return band['label']
+    
+    print(f"DEBUG: No matching band found for {days_until} days")
+    return None
+
+def get_rate_for_date(date, property_config, rate_table):
+    """Get rate for a specific date using property configuration."""
+    # Get urgency configuration
+    urgency_config = property_config.get('urgency_configuration', {})
+    tier_groups = urgency_config.get('tier_groups', ["T10-T12", "T13-T15"])
+    booking_window_label = urgency_config.get('booking_window_label', "W1")
+    max_occupancy_pct = urgency_config.get('max_occupancy_pct', 30)
+    
+    # Get current date
+    today = datetime.now().date()
+    
+    # Calculate urgency band if applicable
+    urgency_band = None
+    if date in rate_table.index:
+        row = rate_table.loc[date]
+        # Check if we should apply urgency bands
+        if (row['tier_group'] in tier_groups and 
+            row['booking_window'].endswith(f"({booking_window_label})") and 
+            row['occupancy_pct'] <= max_occupancy_pct):
+            urgency_band = calculate_urgency_band(date, today, property_config)
+    
+    # Get rate based on urgency band
+    if urgency_band and urgency_band in rate_table.columns:
+        print(f"DEBUG: Using urgency band rate for band {urgency_band}")
+        return rate_table.loc[date, urgency_band]
+    else:
+        print(f"DEBUG: No urgency band rate found. Band: {urgency_band}, Columns: {rate_table.columns.tolist()}")
+    
+    # Fall back to base rate if no urgency band applies
+    return rate_table.loc[date, 'base_rate']
+
 def main():
     """Main function to run the dynamic pricing generation."""
 
@@ -140,49 +190,54 @@ def main():
             tier_group = date_tier_map.get(date_str, 'T0') # Default to T0 if date not in map
             # Get booking window definitions from the specific property config
             window_definitions = property_config.get('booking_window_definitions', [])
-            booking_window_label = utils.get_booking_window_label(current_date, today, window_definitions)
+            booking_window = utils.get_booking_window_label(current_date, today, window_definitions)
             day_group = utils.get_day_group(current_date)
             occupancy_band = (occupancy_pct // 10) * 10 # Floor to nearest 10%
 
             # Determine if urgency calculation is needed
             urgency_band = ""
-            # Get urgency definitions from config
-            urgency_definitions = property_config.get('urgency_band_definitions', [])
-            # Check if urgency calculation is relevant based on Tier, Window, Occupancy
-            # (This condition itself might eventually move to config if needed)
-            if (tier_group in ["T10-T12", "T13-T15"]) and \
-               (booking_window_label == "0-9 Days (W1)") and \
-               (occupancy_pct <= 30):
-               # Calculate urgency band using config definitions
-               urgency_band = utils.get_urgency_band(current_date, today, urgency_definitions)
+            # Get urgency configuration from property config
+            urgency_config = property_config.get('urgency_configuration', {})
+            if urgency_config:  # Only check urgency if property has urgency configuration
+                tier_groups = urgency_config.get('tier_groups', [])
+                urgency_window_label = urgency_config.get('booking_window_label', '')
+                max_occupancy_pct = urgency_config.get('max_occupancy_pct', 0)
 
-            # Look up suggested rate - Now returns (rate, error_message)
-            suggested_rate_val, lookup_error = calculator.lookup_rate(
+                # Check if urgency should apply based on property's configuration
+                current_window_label = booking_window.split('(')[-1].strip(')')
+                if (tier_groups and tier_group in tier_groups and 
+                    urgency_window_label and current_window_label == urgency_window_label and 
+                    max_occupancy_pct > 0 and occupancy_pct <= max_occupancy_pct):
+                    # Calculate urgency band using config definitions
+                    urgency_band = calculate_urgency_band(current_date, today, property_config)
+
+            # Look up suggested rate - Now returns (rate, calculated_tier, error_message)
+            suggested_rate_val, calculated_tier, lookup_error = calculator.lookup_rate(
                 rate_table_df=rate_table_df,
                 tier_group=tier_group,
                 day_group=day_group,
-                booking_window=booking_window_label,
+                booking_window=booking_window,
                 occupancy_pct=occupancy_pct,
                 urgency_band=urgency_band,
                 rate_group_key=rate_group_key
             )
 
             # --- Calculate Final Rate and Determine if Adjustment Occurred ---
-            final_rate = suggested_rate_val # Start with the base suggested rate (which might be None)
+            final_rate = suggested_rate_val
             adjustment_applied = False # Flag to track if any change happened
             error_details_str = lookup_error # Store potential lookup error
 
             # 1. Apply Rule-Based Adjustments
             # Only apply if base lookup didn't already fail
             if error_details_str is None:
-                rule_adjusted_rate = calculator.apply_adjustment_rules(
+                rule_adjusted_rate, rule_calculated_tier = calculator.apply_adjustment_rules(
                     current_date=current_date,
                     listing_id=listing_id, # Pass the ID
                     occupancy_pct=occupancy_pct,
                     rate_table_df=rate_table_df,
                     date_tier_map=date_tier_map,
                     booked_blocked_set=booked_blocked_set,
-                    booking_window_label=booking_window_label,
+                    booking_window_label=booking_window,
                     property_config=property_config,
                     today=today
                 )
@@ -193,6 +248,8 @@ def main():
                     elif not pd.notna(final_rate):
                         adjustment_applied = True
                     final_rate = rule_adjusted_rate
+                    if rule_calculated_tier is not None:
+                        calculated_tier = rule_calculated_tier
             #else: rule adjustments are skipped if base lookup failed
 
             # 2. Apply Event Multiplier (to the rate determined so far)
@@ -236,7 +293,7 @@ def main():
                 "suggested_rate": output_suggested_rate, # Base rate or Error string
                 "adjusted_rate": output_adjusted_rate, # Final rate ONLY if adjustment occurred
                 "final_tier": tier_group,
-                "booking_window": booking_window_label,
+                "booking_window": booking_window,
                 "error_details": error_details_str # Add the error message column
             })
 

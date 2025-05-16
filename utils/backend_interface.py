@@ -141,7 +141,20 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                 booking_window = utils.get_booking_window_label(current_date_obj, today, prop_config.get('booking_window_definitions', []))
                 tier_group = date_tier_map.get(current_date_str)
                 occupancy_pct = occupancy_map.get(current_date_str, 0.0)
-                urgency_band = utils.get_urgency_band(current_date_obj, today, prop_config.get('urgency_band_definitions', []))
+                # Assign urgency_band only if all urgency_configuration conditions are met
+                urgency_band = ""
+                urgency_config = prop_config.get('urgency_configuration', {})
+                tier_groups = urgency_config.get('tier_groups', [])
+                urgency_window_label = urgency_config.get('booking_window_label', "")
+                max_occupancy_pct = urgency_config.get('max_occupancy_pct', 100)
+                # Extract just the label part, e.g., "W1" from "0-9 Days (W1)"
+                current_window_label = booking_window.split('(')[-1].strip(')')
+                if (
+                    tier_group in tier_groups and
+                    current_window_label == urgency_window_label and
+                    occupancy_pct <= max_occupancy_pct
+                ):
+                    urgency_band = utils.get_urgency_band(current_date_obj, today, prop_config.get('urgency_band_definitions', []))
 
                 if not tier_group:
                     # st.warning(f"Tier group not found for {current_date_str} in property {prop_name}. Skipping rate calculation for this date.")

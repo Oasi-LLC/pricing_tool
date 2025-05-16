@@ -65,12 +65,14 @@ def lookup_rate(
     urgency_filter_active = bool(urgency_band) # True if urgency_band is not None/empty
 
     # Filter the DataFrame - Use inclusive boundaries for occupancy
+    # ROUND occupancy_pct to nearest integer for matching
+    occupancy_pct_rounded = round(occupancy_pct)
     mask = (
         (rate_table_df['tier_group'] == tier_group) &
         (rate_table_df['day_group'] == day_group) &
         (rate_table_df['booking_window'] == booking_window) &
-        (rate_table_df['occupancy_min_pct'] <= occupancy_pct) &
-        (rate_table_df['occupancy_max_pct'] >= occupancy_pct)
+        (rate_table_df['occupancy_min_pct'] <= occupancy_pct_rounded) &
+        (rate_table_df['occupancy_max_pct'] >= occupancy_pct_rounded)
     )
 
     # Add urgency band filter conditionally
@@ -156,17 +158,20 @@ def get_adjusted_rate(
         return None, None # Return None for both rate and tier
 
     # Determine if urgency applies based on the REFERENCE date's tier and window/occupancy
-    # The original script logic checks urgency based on ref_date's tier/window/occ
-    # Let's recalculate urgency based on the reference date
     ref_urgency_band = ""
-    # Logic from original script: Apply urgency if Tier 10-15, W1, Occ <= 30%
-    # We use the ORIGINAL date's occupancy and booking window here as per original logic
-    if (ref_tier_group in ["T10-T12", "T13-T15"]) and \
-       (booking_window_label == "0-9 Days (W1)") and \
-       (occupancy_pct <= 30):
-       # Urgency band itself depends on days between ref_date and today
-        ref_urgency_band = utils.get_urgency_band(ref_date, today)
-
+    # Get urgency configuration from property config
+    urgency_config = property_config.get('urgency_configuration', {})
+    if urgency_config:  # Only check urgency if property has urgency configuration
+        tier_groups = urgency_config.get('tier_groups', [])
+        urgency_window_label = urgency_config.get('booking_window_label', '')
+        max_occupancy_pct = urgency_config.get('max_occupancy_pct', 0)
+        
+        # Check if urgency should apply based on property's configuration
+        if (tier_groups and ref_tier_group in tier_groups and 
+            urgency_window_label and booking_window_label.endswith(f"({urgency_window_label})") and 
+            max_occupancy_pct > 0 and occupancy_pct <= max_occupancy_pct):
+            # Urgency band itself depends on days between ref_date and today
+            ref_urgency_band = utils.get_urgency_band(ref_date, today, property_config)
 
     # Perform the lookup using reference date's tier, target day group, original occupancy, etc.
     # IMPORTANT: get_adjusted_rate now uses lookup_rate internally.

@@ -14,3 +14,21 @@
 2025-04-18 13:51:00 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
 2025-04-18 13:53:09 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-18 to 2026-04-18
 2025-04-18 13:53:49 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-04-22 11:28:49 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-22 to 2026-04-22
+2025-04-22 11:29:27 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-04-22 11:29:56 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-22 to 2026-04-22
+2025-04-22 11:30:33 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-04-23 15:16:19 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-23 to 2026-04-23
+2025-04-23 15:17:00 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-04-25 10:12:05 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-25 to 2026-04-25
+2025-04-25 10:12:44 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-04-28 08:34:16 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-28 to 2026-04-28
+2025-04-28 08:34:54 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-04-29 11:00:17 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-29 to 2026-04-29
+2025-04-29 11:00:57 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-04-30 10:56:11 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-04-30 to 2026-04-30
+2025-04-30 10:56:53 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-05-13 08:57:23 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-05-13 to 2026-05-13
+2025-05-13 08:58:02 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-05-16 16:00:59 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-05-16 to 2026-05-16
+2025-05-16 16:01:44 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
