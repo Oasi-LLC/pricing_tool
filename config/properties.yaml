@@ -347,12 +347,13 @@ properties:
       - {name: "FLOHOM 6", id: "345316"}
       - {name: "FLOHOM 7", id: "366176"}
       - {name: "FLOHOM 8", id: "376368"}
+      - {name: "FLOHOM 9", id: "383097"}
     rate_group_mapping:
       rate_1: ["146908"]
       rate_2: ["146944"]
       rate_3: ["146946"]
       rate_4: ["260001"]
-      rate_5: ["278502"]
+      rate_5: ["278502", "383097"]
       rate_6: ["345316"]
       rate_7: ["366176"]
       rate_8: ["376368"]
