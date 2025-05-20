@@ -21,4 +21,4 @@ venv/
 *.log
 
 
-*.idea
+*.idea.streamlit/secrets.toml
