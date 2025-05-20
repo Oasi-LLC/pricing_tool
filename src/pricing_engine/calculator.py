@@ -170,7 +170,7 @@ def get_adjusted_rate(
         if (tier_groups and ref_tier_group in tier_groups and 
             urgency_window_label and booking_window_label.endswith(f"({urgency_window_label})") and 
             max_occupancy_pct > 0 and occupancy_pct <= max_occupancy_pct):
-            # Urgency band itself depends on days between ref_date and today
+       # Urgency band itself depends on days between ref_date and today
             ref_urgency_band = utils.get_urgency_band(ref_date, today, property_config)
 
     # Perform the lookup using reference date's tier, target day group, original occupancy, etc.
