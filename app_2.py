@@ -417,6 +417,7 @@ with config_area:
     st.subheader("1. Configure Rate Generation")
     
     available_properties = backend_interface.get_available_properties()
+    property_display_names = backend_interface.get_property_display_names()
     if not available_properties:
         st.error("Could not load property list from configuration. Please check config/properties.yaml")
         st.stop()
@@ -428,6 +429,7 @@ with config_area:
             "Select Property/Unit Pools:",
             options=available_properties,
             default=st.session_state.selected_properties,
+            format_func=lambda x: property_display_names.get(x, x),
             key='prop_select'
         )
     

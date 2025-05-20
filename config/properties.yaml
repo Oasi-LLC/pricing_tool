@@ -79,6 +79,10 @@ properties:
       - { label: "2-3", min_days: 2, max_days: 3 }
       - { label: "4-6", min_days: 4, max_days: 6 }
       - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: [ "T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 30
 
   wb1: # Property wb1
     # Documentation: Defines configuration for the 'wb1' property.
@@ -132,18 +136,20 @@ properties:
             reference_day_offset: 1 # Base rate on Saturday's tier
             lookup_day_group: "Fri-Sat" # Use Thu-Sun pricing group
     booking_window_definitions:
-      - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
-      - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
-      - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
-      - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
-      - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
-      - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
-      - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
+      - { label: "0-6 Days (W1)", min_days: 0, max_days: 6 }
+      - { label: "7-14 Days (W2)", min_days: 7, max_days: 14 }
+      - { label: "15-29 Days (W3)", min_days: 15, max_days: 29 }
+      - { label: "30-59 Days (W4)", min_days: 30, max_days: 59 }
+      - { label: "60-90 Days (W5)", min_days: 60, max_days: 90 }
+      - { label: ">90 Days (W6)", min_days: 91, max_days: 9999 }
     urgency_band_definitions:
       - { label: "0-1", min_days: 0, max_days: 1 }
       - { label: "2-3", min_days: 2, max_days: 3 }
       - { label: "4-6", min_days: 4, max_days: 6 }
-      - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: ["T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 25
 
   # --- Template for Adding a New Property ---
   # new_prop_key: # Must match the data directory name (e.g., data/new_prop_key/)
@@ -204,6 +210,10 @@ properties:
       - { label: "2-3", min_days: 2, max_days: 3 }
       - { label: "4-6", min_days: 4, max_days: 6 }
       - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: [ "T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 30
 
   pblu1:
     name: "ParcBlu"
@@ -227,19 +237,19 @@ properties:
       - { label: ">38 Days (W5)", min_days: 38, max_days: 9999 }
 
   atx1:
-    name: "Austin properties"
+    name: "Austin"
     pms: hostaway
     listings:
       - {name: "Coventry", id: "320200"}
       - {name: "Romney", id: "320201"}
       - {name: "Burnhill", id: "320202"}
       - {name: "Sunstrip", id: "320203"}
-      - {name: "Malvern", id: "331303"}
+      - {name: "Malvern", id: "389561"}
     rate_group_mapping:
       rate_4: ["320203"] # Sunstrip
-      rate_2: ["331303"] # Malvern
+      rate_2: ["389561"] # Malvern
       rate_1: ["320201"] # Romney
-      rate_3: ["320202", "320200"] # Burnhill Dr
+      rate_3: ["320202", "320200"] # Burnhill Dr, Coventry
     booking_window_definitions:
       - { label: "0-7 Days (W1)", min_days: 0, max_days: 7 }
       - { label: "8-30 Days (W2)", min_days: 8, max_days: 30 }
@@ -250,6 +260,10 @@ properties:
       - { label: "0-1", min_days: 0, max_days: 1 }
       - { label: "2-3", min_days: 2, max_days: 3 }
       - { label: "4-7", min_days: 4, max_days: 7 }
+    urgency_configuration:
+      tier_groups: ["T5-T6"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 15
 
   edge1:
     name: "Edgecamp"
@@ -309,6 +323,10 @@ properties:
       - { label: "2-3", min_days: 2, max_days: 3 }
       - { label: "4-6", min_days: 4, max_days: 6 }
       - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: [ "T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 30
 
   sos1:
     name: "Spirit of Sofia"
@@ -400,3 +418,40 @@ properties:
       - { label: "2-3", min_days: 2, max_days: 3 }
       - { label: "4-7", min_days: 4, max_days: 7 }
       - { label: "8-13", min_days: 8, max_days: 13 }
+    urgency_configuration:
+      tier_groups: [ "T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 14
+
+  pm1:
+    name: "Pamlico"
+    pms: cloudbeds
+    total_units: 14
+    listings:
+      - {name: "Ground Floor Corner suite Fireplace", id: "307287___641905", units: 1}
+      - {name: "Premium Suite w Gas Fireplace -- 5 units", id: "307287___612624", units: 5}
+      - {name: "Standard Suite - ADA Compliant", id: "307287___612650", units: 1}
+      - {name: "Standard Suite -- 5 units", id: "307287___612625", units: 5}
+      - {name: "Upper Level Corner Suite w Fireplace", id: "307287___612632", units: 1}
+      - {name: "Wellness Suite w Gas Fireplace", id: "307287___612627", units: 1}
+    rate_group_mapping:
+      rate_1: ["307287___641905", "307287___612650",]
+      rate_2: ["307287___612624"]
+      rate_3: ["307287___612625", "307287___612632", "307287___612627"]
+    booking_window_definitions:
+      - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
+      - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
+      - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
+      - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
+      - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
+      - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
+      - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
+    urgency_band_definitions:
+      - { label: "0-1", min_days: 0, max_days: 1 }
+      - { label: "2-3", min_days: 2, max_days: 3 }
+      - { label: "4-6", min_days: 4, max_days: 6 }
+      - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: ["T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 30

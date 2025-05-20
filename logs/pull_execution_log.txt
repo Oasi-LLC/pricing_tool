@@ -22,3 +22,7 @@
 2025-05-20 09:43:50 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
 2025-05-20 09:46:33 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-05-20 to 2026-05-20
 2025-05-20 09:48:20 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-05-20 16:14:40 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-05-20 to 2026-05-20
+2025-05-20 16:16:29 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.
+2025-05-20 16:27:58 - PullExecutionLogger - INFO - START - Fetching overrides from 2025-05-20 to 2026-05-20
+2025-05-20 16:30:03 - PullExecutionLogger - INFO - SUCCESS - Override pull completed.

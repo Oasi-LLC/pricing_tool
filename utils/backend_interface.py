@@ -49,6 +49,14 @@ def get_available_properties() -> list:
         return list(properties_config.keys())
     return []
 
+@st.cache_data
+def get_property_display_names() -> dict:
+    """Returns a dict mapping property keys to display names."""
+    properties_config = load_properties_config()
+    if properties_config:
+        return {k: v.get('name', k) for k, v in properties_config.items()}
+    return {}
+
 # Caching get_rate_details might be less useful if it just formats passed data,
 # but can be added if it performs expensive lookups later.
 # @st.cache_data
