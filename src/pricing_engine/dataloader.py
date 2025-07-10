@@ -155,20 +155,20 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     pl_daily_path = base_path / f"pl_daily_{property_name}.csv"
     booked_blocked_set: Set[Tuple[str, str]] = set()
     try:
-        # UPDATED: Hardcode column names for fb1 pl_daily
+        # UPDATED: Use new PL daily format columns
         pl_df = pd.read_csv(
             pl_daily_path,
-            parse_dates=['Date'], # Use the actual 'Date' column name from CSV
-            # Ensure 'Listing ID' column exists in your CSV and is used here
-            usecols=['Date', 'Listing ID', 'No. Booked', 'No. Blocked', 'Vacant Units'], # Added 'Vacant Units' column
+            usecols=['Date', 'Listing ID', 'No. Booked', 'No. Blocked', 'Vacant Units'], # Use new format columns
             dtype={'Listing ID': str} # Ensure Listing ID is read as string
         )
 
         # Convert numeric columns, coercing errors to NaN
-        # UPDATED: Use actual fb1 column names
         pl_df['No. Booked'] = pd.to_numeric(pl_df['No. Booked'], errors='coerce').fillna(0)
         pl_df['No. Blocked'] = pd.to_numeric(pl_df['No. Blocked'], errors='coerce').fillna(0)
         pl_df['Vacant Units'] = pd.to_numeric(pl_df['Vacant Units'], errors='coerce').fillna(0)
+
+        # Parse the date format - try standard date parsing first
+        pl_df['Date'] = pd.to_datetime(pl_df['Date'], errors='coerce')
 
         # Use 'Date' column for validation
         if not pd.api.types.is_datetime64_any_dtype(pl_df['Date']):
@@ -209,6 +209,10 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
                 # Store in occupancy map
                 occupancy_map[date_str] = occupancy_pct
                 
+                # Debug logging for specific dates
+                if date_str in ['2025-07-09', '2025-07-10', '2025-07-11']:
+                    print(f"DEBUG: Date {date_str} - Total units: {total_units_for_property}, Vacant: {vacant_units}, Occupied: {occupied_units}, Occupancy: {occupancy_pct:.2f}%")
+                
             print(f"Calculated occupancy from vacant units for {len(occupancy_map)} dates.")
         except Exception as e:
             print(f"Warning: Error calculating occupancy from PL Daily: {e}. Will try using resdata instead.")
@@ -218,85 +222,6 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
          raise KeyError(f"Missing expected column in {pl_daily_path}: {e}. Check usecols.")
     except Exception as e:
         raise ValueError(f"Error loading or processing PL Daily {pl_daily_path}: {e}")
-
-
-    # Initialize the event_multiplier_map
-    event_multiplier_map = None
-
-    # --- Load Resdata (for Occupancy Calculation if needed) ---
-    # Only load resdata for occupancy if we couldn't calculate from pl_daily
-    if not occupancy_map:
-        print("Falling back to resdata for occupancy calculation...")
-        resdata_path = base_path / f"resdata_{property_name}.csv"
-        try:
-            # UPDATED: Load date columns as object/string first
-            res_df = pd.read_csv(
-                resdata_path,
-                usecols=['Start Date', 'End Date'],     # Use fb1 names
-                dtype={'Start Date': object, 'End Date': object} # Read as generic object/string
-            )
-
-            # Apply the custom parsing function to each date column
-            res_df['Start Date_dt'] = res_df['Start Date'].apply(_parse_mixed_date)
-            res_df['End Date_dt'] = res_df['End Date'].apply(_parse_mixed_date)
-
-            # Identify rows that failed parsing (are NaT after apply)
-            failed_parse_mask = res_df['Start Date_dt'].isnull() | res_df['End Date_dt'].isnull()
-            if failed_parse_mask.any():
-                print("--- Warning: Rows with unparseable date formats found in resdata_fb1.csv ---")
-                print("Original Start/End Date strings for failed rows:")
-                # Show original strings for rows that failed BOTH parsing attempts
-                print(res_df.loc[failed_parse_mask, ['Start Date', 'End Date']])
-                print("---------------------------------------------------------------------")
-                # Drop rows with invalid dates before proceeding
-                res_df = res_df[~failed_parse_mask].copy()
-            else:
-                 print("All resdata dates parsed successfully using custom parser.")
-
-            # Now 'Start Date_dt' and 'End Date_dt' columns contain datetime objects
-            confirmed_res = res_df.copy() # Use the cleaned dataframe
-
-            # No need to check dtype again here
-            print(f"Found {len(confirmed_res)} valid reservations in {resdata_path} after handling date errors.")
-
-            # Expand reservations into daily stays (one row per occupied night)
-            daily_stays_list = []
-            for _, row in confirmed_res.iterrows(): # Use _ if index not needed
-                # Check-out date is the morning after the last night stayed
-                # Need date range from check_in up to, but not including, check_out
-                # UPDATED: Use the _dt columns which contain datetime objects
-                start_date_obj = row['Start Date_dt']
-                end_date_obj = row['End Date_dt']
-
-                if pd.notna(start_date_obj) and pd.notna(end_date_obj) and end_date_obj > start_date_obj:
-                    # Generate dates for each night stayed
-                    # Exclude the check-out date since it's not a night stayed
-                    # UPDATED: Use the _dt objects
-                    date_range = pd.date_range(start_date_obj, end_date_obj - pd.Timedelta(days=1), freq='D')
-                    for stay_date in date_range:
-                        daily_stays_list.append({'stay_date': stay_date.date()}) # Store only date part
-
-            if not daily_stays_list:
-                print("Warning: No valid daily stays generated from reservation data.")
-                # Occupancy map will remain empty, which is handled later
-            else:
-                daily_stays_df = pd.DataFrame(daily_stays_list)
-
-                # Count stays per date
-                daily_counts = daily_stays_df.groupby('stay_date').size()
-
-                # Calculate occupancy percentage
-                occupancy_percentage = (daily_counts / total_units_for_property) * 100
-
-                # Convert to dictionary: 'YYYY-MM-DD' -> percentage
-                occupancy_map = {utils.format_date(idx): val for idx, val in occupancy_percentage.items()}
-                print(f"Processed Resdata: Occupancy calculated for {len(occupancy_map)} dates from reservation data.")
-        except FileNotFoundError:
-            print(f"Warning: Resdata file not found: {resdata_path}. Occupancy will be 0 for all dates.")
-        except KeyError as e:
-            print(f"Warning: Missing expected column in {resdata_path}: {e}. Occupancy will be 0 for all dates.")
-        except Exception as e:
-            print(f"Warning: Error loading or processing Resdata {resdata_path}: {e}. Occupancy will be 0 for all dates.")
 
 
     # --- Load Event Modifiers (Optional) ---

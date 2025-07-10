@@ -20,6 +20,8 @@ __pycache__/
 venv/
 *.log
 
+# Logs directory
+logs/
 
 *.idea.streamlit/secrets.toml
 .streamlit/secrets.toml

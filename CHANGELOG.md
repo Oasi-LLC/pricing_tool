@@ -2,7 +2,26 @@
 
 This file documents all significant changes to the pricing tool codebase.
 
-## [Unreleased]
+## [v1.6.0] - 2024-07-09
+
+### Added
+- Enhanced Streamlit UI: live preview for both price and LOS adjustments, batch actions, and improved session state handling
+- Support for adding new properties (e.g., FLOHOM 14) via config and data files
+- Comprehensive README with setup, usage, and maintenance instructions
+
+### Changed
+- All price adjustments now round to whole numbers
+- Adjustments (price/LOS) now work sequentially on the same updated data without requiring a refresh
+- The "selected rows" table always updates to reflect the current selection
+- Data generation and nightly override pulls now fully support new properties
+
+### Removed
+- All fallback and dependency on resdata files for occupancy calculation (now only uses pl_daily)
+- All resdata_*.csv files from data directories
+
+### Fixed
+- NameError and session state bugs in adjustment logic
+- UI bugs with stale data after pushing or changing selection
 
 ## [v1.5.0] - 2025-04-17
 

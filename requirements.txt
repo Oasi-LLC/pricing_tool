@@ -1,9 +1,11 @@
-pandas~=2.2.3
+pandas~=2.0.3
 click~=8.1.8
 requests~=2.32.3
-streamlit~=1.44.1
-numpy~=2.2.4
-streamlit-aggrid==1.1.2
+streamlit~=1.24.0
+numpy~=1.24.3
+streamlit-aggrid==0.3.4.post3
 pyyaml~=6.0.1
 watchdog~=4.0.0
 python-dotenv~=1.0.1
+selenium~=4.18.1
+webdriver-manager~=4.0.1

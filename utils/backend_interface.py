@@ -107,7 +107,8 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
     )
     logging.info(f"Starting rate generation run. Log file: {log_filename}")
     logging.info(f"Properties selected: {property_selection}")
-    logging.info(f"Date range: {start_date} to {end_date}")
+    logging.info(f"Display date range: {start_date} to {end_date}")
+    logging.info(f"Note: Using full 2-year dataset for occupancy calculations")
     # --- End Logging Setup ---
 
     all_properties_config = load_properties_config()
@@ -116,6 +117,7 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
         return None
 
     all_results = []
+    full_dataset_results = []  # Store full dataset for calculations
     today = datetime.date.today()
     logging.info(f"Reference date (today): {today}") # <-- Log info
 
@@ -140,9 +142,17 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
             rate_table_df, date_tier_map, booked_blocked_set, occupancy_map, event_multiplier_map = dataloader.load_and_preprocess_data(prop_name, prop_config)
             logging.info(f"--- Data loaded for {prop_name}. Calculating rates... ---") # <-- Log info
 
-            date_range = pd.date_range(start_date, end_date, freq='D')
-
-            for current_date in date_range:
+            # Use full 2-year date range for calculations but only return user's selected range
+            # But limit to dates that actually have data in the PL daily file
+            full_start_date = datetime.date(2025, 1, 1)
+            full_end_date = datetime.date(2025, 12, 31)  # Only use 2025 since that's what we have data for
+            full_date_range = pd.date_range(full_start_date, full_end_date, freq='D')
+            
+            # User's selected date range for display
+            user_date_range = pd.date_range(start_date, end_date, freq='D')
+            
+            # Process all dates for accurate occupancy calculations
+            for current_date in full_date_range:
                 current_date_obj = current_date.date()
                 current_date_str = utils.format_date(current_date_obj)
                 day_group = utils.get_day_group(current_date_obj)
@@ -186,7 +196,7 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     error_msg = None
                     flag = '' # Placeholder for flag logic
                     baseline = 0.0 # Placeholder for baseline logic
-                    occ_curr = occupancy_pct
+                    occ_curr = occupancy_pct  # Assign property-wide occupancy directly
                     occ_hist = 0.0 # Placeholder
                     pace = 0.0 # Placeholder
                     calculated_tier = None # Initialize calculated tier
@@ -199,7 +209,9 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                         adjusted_rate = None # Not applicable
                         calculated_tier = None # Not applicable
                         error_msg = None # Not applicable
+                        logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} is BOOKED")
                     else:
+                        logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} is NOT booked (not in booked_blocked_set)")
                         # --- Proceed with rate calculation only if not booked/blocked ---
 
                         # Check adjustment rules first
@@ -256,8 +268,8 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     # TODO: Implement actual logic for Baseline, Occ% Hist, Pace, Flagging
                     # These might require more historical data loading or comparison logic
 
-                    # Append result row
-                    all_results.append({
+                    # Create result row
+                    result_row = {
                         '_id': rate_id,
                         'Date': current_date_obj,
                         'Unit Pool': prop_name, # Assign prop_name (e.g., 'fb1') to Unit Pool
@@ -281,7 +293,13 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                         'calculated_tier': calculated_tier, # Store the specific calculated tier
                         'tier_group': tier_group, # Keep original tier_group for reference if needed
                         'day_group': day_group,
-                    })
+                    }
+
+                    # Add to full dataset for calculations
+                    full_dataset_results.append(result_row)
+
+                    # Add ALL results to display (frontend will filter as needed)
+                    all_results.append(result_row)
 
         except (FileNotFoundError, KeyError, ValueError) as e:
             st.error(f"Error processing property {prop_name}: {e}")
@@ -301,7 +319,13 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
         logging.warning("No rate results were generated.") # <-- Log warning
         return None
 
-    logging.info(f"--- Rate calculation complete. {len(all_results)} total rate entries generated. ---") # <-- Log info
+    logging.info(f"--- Rate calculation complete. {len(all_results)} display entries, {len(full_dataset_results)} total entries generated. ---") # <-- Log info
+    
+    # Store full dataset in session state for calculations
+    if hasattr(st, 'session_state'):
+        st.session_state.full_dataset_df = pd.DataFrame(full_dataset_results)
+        logging.info(f"Full dataset stored in session state with {len(full_dataset_results)} entries")
+    
     results_df = pd.DataFrame(all_results)
     return results_df
 
