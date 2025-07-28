@@ -23,5 +23,16 @@ venv/
 # Logs directory
 logs/
 
+# Data archives (backup files)
+data/*/archive/
+
+# Generated data files (these are created by the scheduler)
+data/*/*.csv
+
+# Scheduler logs
+logs/scheduler_daemon.log
+logs/scheduler.log
+logs/last_scheduler_refresh.txt
+
 *.idea.streamlit/secrets.toml
 .streamlit/secrets.toml

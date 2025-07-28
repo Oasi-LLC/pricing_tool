@@ -2,7 +2,31 @@
 
 This file documents all significant changes to the pricing tool codebase.
 
-## [v1.6.0] - 2024-07-09
+## [v1.7.0] - 2025-07-28
+
+### Added
+- **Auto-Refresh Scheduler**: Complete automated data refresh system that runs independently of the Streamlit app
+- **Background Daemon**: `scheduler_daemon.py` runs continuously to refresh data at scheduled times (1 AM & 1 PM Lisbon time)
+- **Smart Refresh Logic**: Only refreshes properties that need updating based on data age or missing files
+- **Rate Limit Handling**: Built-in retry logic with configurable delays to handle API rate limits gracefully
+- **Management Scripts**: `manage_scheduler.sh` and `start_scheduler.sh` for easy scheduler control
+- **Enhanced UI**: Auto-Refresh Scheduler section in Streamlit app with real-time status and controls
+- **Comprehensive Documentation**: `SCHEDULER_README.md` with complete setup and usage instructions
+- **Individual Property Processing**: Processes properties one by one to avoid API timeouts
+- **Timezone Fix**: Fixed critical timezone handling bug that prevented scheduler from running on weekends
+
+### Changed
+- **UI Redesign**: Cleaner Auto-Refresh Scheduler interface with status cards and consolidated information
+- **Data Management**: Moved data timestamps to scheduler section for better organization
+- **Refresh Logic**: "Refresh All Data" now processes only selected properties with dynamic date ranges
+- **Configuration**: Added `config/scheduler.yaml` for comprehensive scheduler settings
+
+### Fixed
+- **Timezone Bug**: Fixed `can't subtract offset-naive and offset-aware datetimes` error that prevented scheduler operation
+- **Rate Limit Issues**: Implemented proper retry logic for properties that hit API rate limits
+- **UI Clutter**: Removed redundant information and improved layout for better user experience
+
+## [v1.6.0] - 2025-07-10
 
 ### Added
 - Enhanced Streamlit UI: live preview for both price and LOS adjustments, batch actions, and improved session state handling

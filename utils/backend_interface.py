@@ -214,9 +214,9 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                         logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} is NOT booked (not in booked_blocked_set)")
                         # --- Proceed with rate calculation only if not booked/blocked ---
 
-                        # Check adjustment rules first
+                        # Check advanced adjustment rules first
                         # Now returns a tuple: (rate, tier)
-                        adjusted_rate, calculated_tier_from_adjustment = calculator.apply_adjustment_rules(
+                        adjusted_rate, calculated_tier_from_adjustment = calculator.apply_advanced_rules(
                             current_date=current_date_obj,
                             listing_id=listing_id,
                             occupancy_pct=occupancy_pct,
@@ -225,6 +225,7 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                             booked_blocked_set=booked_blocked_set,
                             booking_window_label=booking_window,
                             property_config=prop_config,
+                            property_name=prop_name,
                             today=today
                         )
 

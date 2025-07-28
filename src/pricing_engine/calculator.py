@@ -2,10 +2,13 @@
 
 import pandas as pd
 import datetime
-from typing import Dict, Set, Tuple, Optional, Any
+from typing import Optional, Dict, Any, Tuple, Set
+import numpy as np
 
 # Assuming utils.py is in the same directory or Python path is set correctly
 from . import utils # Use relative import within the package
+
+# Rule engine import removed - will be added when ready for integration
 
 def _get_rate_group_for_listing_id(listing_id: str, property_config: dict) -> Optional[str]:
     """
@@ -311,4 +314,41 @@ def apply_adjustment_rules(
                      print(f"Warning: Rule '{rule.get('name', 'Unnamed Rule')}' triggered, but no valid action found for Listing ID {listing_id} on {utils.format_date(current_date)}")
 
     # If no rules applied or succeeded, return None for both
+    return None, None
+
+def apply_advanced_rules(
+    current_date: datetime.date,
+    listing_id: str,
+    occupancy_pct: float,
+    rate_table_df: pd.DataFrame,
+    date_tier_map: Dict[str, str],
+    booked_blocked_set: Set[Tuple[str, str]],
+    booking_window_label: str,
+    property_config: dict,
+    property_name: str,
+    today: datetime.date
+) -> Tuple[Optional[float], Optional[str]]:
+    """
+    Apply the advanced rule engine for complex pricing adjustments.
+    
+    NOTE: This function is currently disabled - rule engine implementation
+    will be added when ready for integration.
+    
+    Args:
+        current_date: The date for which the rate is being calculated.
+        listing_id: The specific listing ID.
+        occupancy_pct: Occupancy percentage for current_date.
+        rate_table_df: Rate table DataFrame.
+        date_tier_map: Map of date strings to tiers.
+        booked_blocked_set: Set of ('listing_id', 'YYYY-MM-DD') for booked/blocked dates.
+        booking_window_label: Booking window label for current_date.
+        property_config: Property configuration.
+        property_name: Name of the property (e.g., 'atx1', 'edge1').
+        today: Today's date.
+    
+    Returns:
+        A tuple containing the adjusted rate (or None) and the associated
+        calculated tier string (or None).
+    """
+    # Rule engine implementation disabled - will be added when ready
     return None, None

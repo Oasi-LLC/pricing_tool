@@ -13,6 +13,12 @@ import os
 # Import backend interface functions
 from utils import backend_interface
 
+# Import scheduler functions
+from utils.scheduler import (
+    load_scheduler_config, save_scheduler_config, get_scheduler_status,
+    is_time_to_refresh, run_scheduled_refresh, get_lisbon_time, estimate_api_call_volume
+)
+
 # Set page config
 st.set_page_config(layout="wide", page_title="Rate Review Tool")
 
@@ -159,24 +165,24 @@ if 'refresh_nightly_clicked' not in st.session_state:
     st.session_state.refresh_nightly_clicked = False
 if 'refresh_current_clicked' not in st.session_state:
     st.session_state.refresh_current_clicked = False
+if 'refresh_property_clicked' not in st.session_state:
+    st.session_state.refresh_property_clicked = False
+if 'refresh_all_data_clicked' not in st.session_state:
+    st.session_state.refresh_all_data_clicked = False
 if 'refresh_status' not in st.session_state:
     st.session_state.refresh_status = ""
 if 'last_refresh_time' not in st.session_state:
     st.session_state.last_refresh_time = None
 
-# Filter defaults
-filter_defaults = {
-    'filter_start_date': None, 'filter_end_date': None,
-    'filter_properties': [], 'filter_tiers': [], 'filter_dow': [],
-    'filter_min_occ': None, 'filter_max_occ': None,
-    'filter_min_live_rate': None, 'filter_max_live_rate': None,
-    'filter_min_delta': None, 'filter_max_delta': None,
-    'filter_flags': [], 'filter_statuses': []
-}
+# Add scheduler states to session state initialization
+if 'scheduler_enabled' not in st.session_state:
+    st.session_state.scheduler_enabled = False
+if 'scheduler_refresh_clicked' not in st.session_state:
+    st.session_state.scheduler_refresh_clicked = False
+if 'scheduler_status' not in st.session_state:
+    st.session_state.scheduler_status = ""
 
-for key, default_value in filter_defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = default_value
+# Filter defaults - removed since filtering is now handled by the grid
 
 # Rate source toggle state
 if 'active_rate_source_col' not in st.session_state:
@@ -214,8 +220,8 @@ def apply_price_adjustment(current_price, adjustment_type, adjustment_amount):
         return current_price
 
 def clear_all_filter_states():
-    for key, default_value in filter_defaults.items():
-        st.session_state[key] = default_value
+    # This function is no longer needed since filtering is handled by the grid
+    pass
 
 def update_editable_rate_source():
     """Update editable rate values based on selected source"""
@@ -233,45 +239,7 @@ def update_editable_rate_source():
         else:
             st.error(f"Source column '{source_col}' not found in data")
 
-def apply_filters(df, filter_state):
-    if df is None or df.empty:
-        return pd.DataFrame()
 
-    filtered_df = df.copy()
-
-    # Date filters
-    if filter_state.get('filter_start_date'):
-        filtered_df = filtered_df[pd.to_datetime(filtered_df[COL_DATE]).dt.date >= filter_state['filter_start_date']]
-    if filter_state.get('filter_end_date'):
-        filtered_df = filtered_df[pd.to_datetime(filtered_df[COL_DATE]).dt.date <= filter_state['filter_end_date']]
-
-    # Multi-select filters
-    if filter_state.get('filter_properties'):
-        filtered_df = filtered_df[filtered_df[COL_PROPERTY_SRC].isin(filter_state['filter_properties'])]
-    if filter_state.get('filter_tiers'):
-        filtered_df = filtered_df[filtered_df[COL_CALCULATED_TIER_SRC].isin(filter_state['filter_tiers'])]
-    if filter_state.get('filter_dow'):
-        filtered_df = filtered_df[filtered_df[COL_DAY_OF_WEEK].isin(filter_state['filter_dow'])]
-    if filter_state.get('filter_flags'):
-        filtered_df = filtered_df[filtered_df[COL_FLAG].isin(filter_state['filter_flags'])]
-    if filter_state.get('filter_statuses'):
-        filtered_df = filtered_df[filtered_df[COL_STATUS].isin(filter_state['filter_statuses'])]
-
-    # Numeric range filters
-    if filter_state.get('filter_min_occ') is not None:
-        filtered_df = filtered_df[pd.to_numeric(filtered_df[COL_OCC_CURR], errors='coerce') >= filter_state['filter_min_occ']]
-    if filter_state.get('filter_max_occ') is not None:
-        filtered_df = filtered_df[pd.to_numeric(filtered_df[COL_OCC_CURR], errors='coerce') <= filter_state['filter_max_occ']]
-    if filter_state.get('filter_min_live_rate') is not None:
-        filtered_df = filtered_df[pd.to_numeric(filtered_df[COL_LIVE_RATE], errors='coerce') >= filter_state['filter_min_live_rate']]
-    if filter_state.get('filter_max_live_rate') is not None:
-        filtered_df = filtered_df[pd.to_numeric(filtered_df[COL_LIVE_RATE], errors='coerce') <= filter_state['filter_max_live_rate']]
-    if filter_state.get('filter_min_delta') is not None:
-        filtered_df = filtered_df[pd.to_numeric(filtered_df[COL_DELTA], errors='coerce') >= filter_state['filter_min_delta']]
-    if filter_state.get('filter_max_delta') is not None:
-        filtered_df = filtered_df[pd.to_numeric(filtered_df[COL_DELTA], errors='coerce') <= filter_state['filter_max_delta']]
-
-    return filtered_df
 
 def get_full_dataset_for_calculations():
     """Get the full dataset for calculations if available"""
@@ -445,18 +413,17 @@ def initialize_session_state():
         st.session_state.filter_state = {}
     if 'data_loaded' not in st.session_state:
         st.session_state.data_loaded = False
+    
+
 
 def update_filtered_data():
-    """Update filtered data based on current filter state"""
+    """Update filtered data - simplified since filtering is now handled by the grid"""
     if st.session_state.base_data is not None:
-        st.session_state.filtered_data = apply_filters(
-            st.session_state.base_data,
-            st.session_state.filter_state
-        )
+        st.session_state.filtered_data = st.session_state.base_data.copy()
 
 def on_filter_change():
-    """Callback for filter changes"""
-    update_filtered_data()
+    """Callback for filter changes - no longer needed since filtering is handled by the grid"""
+    pass
 
 # Initialize session state
 initialize_session_state()
@@ -507,20 +474,7 @@ with config_area:
             key='end_date_input'
         )
     
-    # --- Show last update times for pl_daily and nightly override files ---
-    if current_selected_properties:
-        prop = current_selected_properties[0]
-        pl_daily_path = f"data/{prop}/pl_daily_{prop}.csv"
-        nightly_path = f"data/{prop}/{prop}_nightly_pulled_overrides.csv"
-        pl_daily_time = None
-        nightly_time = None
-        if os.path.exists(pl_daily_path):
-            pl_daily_time = os.path.getmtime(pl_daily_path)
-        if os.path.exists(nightly_path):
-            nightly_time = os.path.getmtime(nightly_path)
-        import datetime as dt
-        st.info(f"pl_daily last updated: {dt.datetime.fromtimestamp(pl_daily_time).strftime('%Y-%m-%d %H:%M:%S') if pl_daily_time else 'Not found'}")
-        st.info(f"Nightly override last updated: {dt.datetime.fromtimestamp(nightly_time).strftime('%Y-%m-%d %H:%M:%S') if nightly_time else 'Not found'}")
+    # Data timestamps will be shown in the Auto-Refresh Scheduler section
     
     # Only update session state and generate when button is clicked
     if st.button("Generate Rates", key='generate_button', type="primary"):
@@ -549,102 +503,43 @@ with config_area:
         st.session_state.generated_rates_df = None
         st.session_state.edited_rates_df = None
     
-    # Add refresh buttons - always visible
-    st.markdown("### Data Management")
+    # Data Management Section - Combined into one operation
+    st.markdown("### 📊 Data Management")
     
     # Show last refresh time if available
     if st.session_state.last_refresh_time:
         st.info(f"📅 Last data refresh: {st.session_state.last_refresh_time}")
     
-    refresh_col1, refresh_col2, refresh_col3 = st.columns(3)
+    # Add helpful explanation
+    st.info("💡 **Need fresh data?** This will update both pricing and property data:")
     
-    with refresh_col1:
-        if st.button("🔄 Refresh All Data", key='refresh_all_button', help="Generate fresh data for all properties (selected range ±30 days)"):
-            st.session_state.refresh_all_clicked = True
-            st.session_state.refresh_status = "Starting refresh of all properties..."
-            rerun()
-        # Show the date range for all data refresh
-        user_start = st.session_state.start_date
-        user_end = st.session_state.end_date
-        from datetime import timedelta
-        start_date = (user_start - timedelta(days=30)).strftime('%Y-%m-%d')
-        end_date = (user_end + timedelta(days=30)).strftime('%Y-%m-%d')
-        st.caption(f"Will refresh all properties for: {start_date} to {end_date}")
+    # Single combined button
+    st.markdown("**🔄 Refresh All Data**")
+    st.markdown("*Updates both pricing and property data in one operation*")
     
-    with refresh_col2:
-        if st.button("📊 Update Nightly Data", key='refresh_nightly_button', help="Pull latest overrides from PriceLabs (2-year range)"):
-            st.session_state.refresh_nightly_clicked = True
-            st.session_state.refresh_status = "Pulling latest nightly data..."
-            rerun()
-        # Show the date range for nightly data update
-        st.caption("Will update nightly data for: 2025-01-01 to 2026-12-31")
-    
-    with refresh_col3:
-        if st.button("🔄 Refresh Current Property", key='refresh_current_button', help="Generate 2-year data for selected properties (2025-2026)"):
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔄 Refresh All Data", key='refresh_all_data_button', 
+                    help="Download latest pricing data and update property data for selected properties",
+                    type="primary"):
             if not current_selected_properties:
-                st.warning("Please select at least one property first.")
+                st.warning("⚠️ Please select at least one property first.")
             else:
-                st.session_state.refresh_current_clicked = True
-                st.session_state.refresh_status = f"Refreshing 2-year data for {len(current_selected_properties)} properties..."
+                st.session_state.refresh_all_data_clicked = True
+                st.session_state.refresh_status = f"Starting comprehensive data refresh for {len(current_selected_properties)} properties..."
                 rerun()
-        # Show the date range for current property refresh
-        st.caption("Will refresh selected properties for: 2025-01-01 to 2026-12-31")
+    
+    # Show what data will be updated
+    st.markdown("**📋 Data that will be updated:**")
+    st.markdown("• **📈 Current Pricing:** Latest rate overrides and changes from PriceLabs")
+    st.markdown("• **📊 Property Data:** Daily occupancy, booking patterns, and availability")
+    st.caption("📅 Data range: 2025-01-01 to 2026-12-31")
     
     # Show refresh status if any refresh operation is in progress
-    if st.session_state.refresh_all_clicked or st.session_state.refresh_nightly_clicked or st.session_state.refresh_current_clicked:
+    if st.session_state.refresh_nightly_clicked or st.session_state.refresh_property_clicked or st.session_state.refresh_all_data_clicked:
         with st.spinner(st.session_state.refresh_status):
             try:
-                if st.session_state.refresh_all_clicked:
-                    # Run generate_pl_daily_comprehensive.py for all properties
-                    import subprocess
-                    import sys
-                    from datetime import datetime, timedelta
-                    
-                    # Get all property keys from config
-                    import yaml
-                    with open('config/properties.yaml', 'r') as f:
-                        config = yaml.safe_load(f)
-                    all_properties = list(config['properties'].keys())
-                    
-                    # Use selected date range ±30 days
-                    user_start = st.session_state.start_date
-                    user_end = st.session_state.end_date
-                    start_date = (user_start - timedelta(days=30)).strftime('%Y-%m-%d')
-                    end_date = (user_end + timedelta(days=30)).strftime('%Y-%m-%d')
-                    
-                    success_count = 0
-                    total_count = len(all_properties)
-                    
-                    for property_key in all_properties:
-                        result = subprocess.run([
-                            sys.executable, "generate_pl_daily_comprehensive.py", 
-                            property_key, start_date, end_date
-                        ], capture_output=True, text=True, cwd=".")
-                        
-                        if result.returncode == 0:
-                            success_count += 1
-                        else:
-                            st.error(f"❌ Error refreshing {property_key}: {result.stderr}")
-                    
-                    if success_count == total_count:
-                        st.success(f"✅ Successfully refreshed {success_count}/{total_count} properties with data for {start_date} to {end_date}!")
-                    else:
-                        st.warning(f"⚠️ Refreshed {success_count}/{total_count} properties successfully.")
-                    
-                    st.session_state.refresh_all_clicked = False
-                    st.session_state.refresh_status = ""
-                    st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    # Clear cache and reset data state to force reload
-                    st.cache_data.clear()
-                    st.session_state.data_loaded = False
-                    st.session_state.base_data = None
-                    st.session_state.filtered_data = None
-                    st.session_state.generated_rates_df = None
-                    st.session_state.edited_rates_df = None
-                    st.session_state.results_are_displayed = False
-                    rerun()
-                
-                elif st.session_state.refresh_nightly_clicked:
+                if st.session_state.refresh_nightly_clicked:
                     # Run nightly_pull.py for a 2-year range
                     import subprocess
                     import sys
@@ -656,7 +551,9 @@ with config_area:
                     ], 
                     capture_output=True, text=True, cwd=".")
                     if result.returncode == 0:
-                        st.success("✅ Nightly data updated successfully!")
+                        st.success("✅ **Current pricing data downloaded successfully!**")
+                        st.info("📈 Updated: Current pricing overrides and rate changes from PriceLabs")
+                        st.info("📅 Pricing data range: 2025-01-01 to 2026-12-31")
                         st.session_state.refresh_nightly_clicked = False
                         st.session_state.refresh_status = ""
                         st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -670,11 +567,13 @@ with config_area:
                         st.session_state.results_are_displayed = False
                         rerun()
                     else:
-                        st.error(f"❌ Error updating nightly data: {result.stderr}")
+                        st.error(f"❌ **Failed to download current pricing data**")
+                        st.error(f"Error details: {result.stderr}")
+                        st.info("💡 Try again in a few minutes, or contact support if the problem persists.")
                         st.session_state.refresh_nightly_clicked = False
                         st.session_state.refresh_status = ""
                 
-                elif st.session_state.refresh_current_clicked:
+                elif st.session_state.refresh_property_clicked:
                     # Run generate_pl_daily_comprehensive.py for selected properties
                     import subprocess
                     import sys
@@ -683,8 +582,14 @@ with config_area:
                     success_count = 0
                     total_count = len(current_selected_properties)
                     
-                    for property_key in current_selected_properties:
-                        # Generate 2-year data (2025-01-01 to 2026-12-31) instead of user's date range
+                    # Add progress indication
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for i, property_key in enumerate(current_selected_properties):
+                        status_text.text(f"🔄 Updating {property_key}... ({i+1}/{total_count})")
+                        
+                        # Generate 2-year data (2025-01-01 to 2026-12-31)
                         start_date_str = "2025-01-01"
                         end_date_str = "2026-12-31"
                         
@@ -696,14 +601,104 @@ with config_area:
                         if result.returncode == 0:
                             success_count += 1
                         else:
-                            st.error(f"❌ Error refreshing {property_key}: {result.stderr}")
+                            st.error(f"❌ Error updating {property_key}: {result.stderr}")
+                        
+                        # Update progress
+                        progress_bar.progress((i + 1) / total_count)
+                    
+                    # Clear progress indicators
+                    progress_bar.empty()
+                    status_text.empty()
                     
                     if success_count == total_count:
-                        st.success(f"✅ Successfully refreshed {success_count}/{total_count} properties with 2-year data!")
+                        st.success(f"✅ **Property data updated successfully!** ({success_count}/{total_count} properties)")
+                        st.info("📊 Updated: Daily occupancy, booking patterns, and availability data")
+                        st.info("📅 Data range: 2025-01-01 to 2026-12-31")
                     else:
-                        st.warning(f"⚠️ Refreshed {success_count}/{total_count} properties successfully.")
+                        st.warning(f"⚠️ **Partial update completed** - {success_count}/{total_count} properties updated successfully.")
+                        st.error(f"❌ Some properties failed to update. Check the error messages above.")
                     
-                    st.session_state.refresh_current_clicked = False
+                    st.session_state.refresh_property_clicked = False
+                    st.session_state.refresh_status = ""
+                    st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # Clear cache and reset data state to force reload
+                    st.cache_data.clear()
+                    st.session_state.data_loaded = False
+                    st.session_state.base_data = None
+                    st.session_state.filtered_data = None
+                    st.session_state.generated_rates_df = None
+                    st.session_state.edited_rates_df = None
+                    st.session_state.results_are_displayed = False
+                    rerun()
+                
+                elif st.session_state.refresh_all_data_clicked:
+                    # Combined operation: Get current pricing + Update property data for SELECTED properties only
+                    import subprocess
+                    import sys
+                    from datetime import datetime, timedelta
+                    
+                    st.info("🔄 **Step 1/2:** Downloading current pricing data...")
+                    
+                    # Step 1: Get current pricing data (dynamic range: last month to end of year)
+                    today = datetime.now()
+                    start_date = (today.replace(day=1) - timedelta(days=1)).replace(day=1).strftime('%Y-%m-%d')
+                    end_date = today.replace(month=12, day=31).strftime('%Y-%m-%d')
+                    
+                    result = subprocess.run([
+                        sys.executable, "rates/pull/nightly_pull.py", start_date, end_date
+                    ], capture_output=True, text=True, cwd=".")
+                    
+                    if result.returncode == 0:
+                        st.success("✅ **Step 1 Complete:** Current pricing data downloaded successfully!")
+                    else:
+                        st.error(f"❌ **Step 1 Failed:** Error downloading pricing data: {result.stderr}")
+                        st.session_state.refresh_all_data_clicked = False
+                        st.session_state.refresh_status = ""
+                        st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        rerun()
+                    
+                    # Step 2: Update property data for SELECTED properties only
+                    st.info("🔄 **Step 2/2:** Updating property data for selected properties...")
+                    
+                    success_count = 0
+                    total_count = len(current_selected_properties)
+                    
+                    # Add progress indication
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for i, property_key in enumerate(current_selected_properties):
+                        status_text.text(f"🔄 Updating {property_key}... ({i+1}/{total_count})")
+                        
+                        # Use dynamic date range for selected property
+                        result = subprocess.run([
+                            sys.executable, "generate_pl_daily_comprehensive.py", 
+                            property_key, start_date, end_date
+                        ], capture_output=True, text=True, cwd=".")
+                        
+                        if result.returncode == 0:
+                            success_count += 1
+                        else:
+                            st.error(f"❌ Error updating {property_key}: {result.stderr}")
+                        
+                        # Update progress
+                        progress_bar.progress((i + 1) / total_count)
+                    
+                    # Clear progress indicators
+                    progress_bar.empty()
+                    status_text.empty()
+                    
+                    if success_count == total_count:
+                        st.success(f"✅ **Complete Data Refresh Successful!**")
+                        st.info("📈 Updated: Current pricing overrides and rate changes from PriceLabs")
+                        st.info("📊 Updated: Daily occupancy, booking patterns, and availability data")
+                        st.info(f"📅 Data range: {start_date} to {end_date}")
+                        st.info(f"🏠 Properties updated: {success_count}/{total_count}")
+                    else:
+                        st.warning(f"⚠️ **Partial update completed** - {success_count}/{total_count} properties updated successfully.")
+                        st.error(f"❌ Some properties failed to update. Check the error messages above.")
+                    
+                    st.session_state.refresh_all_data_clicked = False
                     st.session_state.refresh_status = ""
                     st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     # Clear cache and reset data state to force reload
@@ -717,11 +712,154 @@ with config_area:
                     rerun()
                     
             except Exception as e:
-                st.error(f"❌ An error occurred during refresh: {str(e)}")
-                st.session_state.refresh_all_clicked = False
+                st.error(f"❌ **An unexpected error occurred during the data refresh**")
+                st.error(f"Error details: {str(e)}")
+                st.info("💡 Please try again, or contact support if the problem persists.")
                 st.session_state.refresh_nightly_clicked = False
-                st.session_state.refresh_current_clicked = False
+                st.session_state.refresh_property_clicked = False
+                st.session_state.refresh_all_data_clicked = False
                 st.session_state.refresh_status = ""
+    
+    # --- Scheduler Section ---
+    st.markdown("### ⏰ Auto-Refresh Scheduler")
+    
+    # Get current scheduler status
+    try:
+        scheduler_status = get_scheduler_status()
+        current_lisbon_time = get_lisbon_time()
+        
+            # Load current config
+            config = load_scheduler_config()
+        enabled = config.get('enabled', False)
+        
+        # Create a clean status card
+        with st.container():
+            # Main status row
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                # Status indicator with clean styling
+                if enabled:
+                    st.markdown("""
+                    <div style="background-color: #1f4e1f; padding: 10px; border-radius: 5px; border-left: 4px solid #4CAF50;">
+                        <strong>🟢 Auto-Refresh Active</strong><br>
+                        <small>Data refreshes automatically at 1 AM & 1 PM Lisbon time</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="background-color: #4e1f1f; padding: 10px; border-radius: 5px; border-left: 4px solid #f44336;">
+                        <strong>🔴 Auto-Refresh Inactive</strong><br>
+                        <small>Manual refresh required</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with col2:
+                # Enable/disable toggle
+                new_enabled = st.checkbox(
+                "Enable Auto-Refresh", 
+                    value=enabled,
+                key="scheduler_enabled_checkbox",
+                    help="Toggle automatic data refresh"
+            )
+            
+            # Save config if changed
+                if new_enabled != enabled:
+                    config['enabled'] = new_enabled
+                if save_scheduler_config(config):
+                        st.success("✅ Settings saved")
+                    rerun()
+                else:
+                        st.error("❌ Save failed")
+        
+        # Show essential timing info in a clean format
+        st.markdown("---")
+        
+        # Data file timestamps
+        if current_selected_properties:
+            prop = current_selected_properties[0]
+            pl_daily_path = f"data/{prop}/pl_daily_{prop}.csv"
+            nightly_path = f"data/{prop}/{prop}_nightly_pulled_overrides.csv"
+            pl_daily_time = None
+            nightly_time = None
+            if os.path.exists(pl_daily_path):
+                pl_daily_time = os.path.getmtime(pl_daily_path)
+            if os.path.exists(nightly_path):
+                nightly_time = os.path.getmtime(nightly_path)
+            import datetime as dt
+            
+            # Data file status
+            data_col1, data_col2 = st.columns(2)
+            with data_col1:
+                st.markdown("**📊 Data Files Status:**")
+                if pl_daily_time:
+                    st.markdown(f"• **Property Data:** {dt.datetime.fromtimestamp(pl_daily_time).strftime('%b %d, %H:%M')}")
+                else:
+                    st.markdown("• **Property Data:** Not found")
+                if nightly_time:
+                    st.markdown(f"• **Current Pricing:** {dt.datetime.fromtimestamp(nightly_time).strftime('%b %d, %H:%M')}")
+            else:
+                    st.markdown("• **Current Pricing:** Not found")
+        
+            with data_col2:
+                st.markdown("**⏰ Scheduler Status:**")
+        if enabled:
+                    if scheduler_status.get('next_refresh'):
+                        next_refresh = scheduler_status['next_refresh']
+                        st.markdown(f"• **Next Refresh:** {next_refresh.strftime('%b %d, %H:%M')}")
+            if scheduler_status.get('last_refresh'):
+                last_refresh = scheduler_status['last_refresh']
+                        st.markdown(f"• **Last Refresh:** {last_refresh.strftime('%b %d, %H:%M')}")
+                    st.markdown(f"• **Current Time:** {current_lisbon_time.strftime('%b %d, %H:%M')} (Lisbon)")
+                else:
+                    st.markdown("• **Status:** Auto-refresh disabled")
+                    st.markdown(f"• **Current Time:** {current_lisbon_time.strftime('%b %d, %H:%M')} (Lisbon)")
+        
+        # Check if it's time to refresh and run if needed
+        if enabled and is_time_to_refresh():
+            st.info("🔄 Running scheduled refresh...")
+            success = run_scheduled_refresh()
+            if success:
+                st.success("✅ Refresh completed successfully!")
+                # Clear cache and reset data state
+                st.cache_data.clear()
+                st.session_state.data_loaded = False
+                st.session_state.base_data = None
+                st.session_state.filtered_data = None
+                st.session_state.generated_rates_df = None
+                st.session_state.edited_rates_df = None
+                st.session_state.results_are_displayed = False
+                rerun()
+            else:
+                st.error("❌ Refresh failed. Check logs for details.")
+        
+        # Handle manual refresh
+        if st.session_state.scheduler_refresh_clicked:
+            with st.spinner("Running manual refresh..."):
+                try:
+                    success = run_scheduled_refresh()
+                    if success:
+                        st.success("✅ Manual refresh completed successfully!")
+                        # Clear cache and reset data state
+                        st.cache_data.clear()
+                        st.session_state.data_loaded = False
+                        st.session_state.base_data = None
+                        st.session_state.filtered_data = None
+                        st.session_state.generated_rates_df = None
+                        st.session_state.edited_rates_df = None
+                        st.session_state.results_are_displayed = False
+                    else:
+                        st.error("❌ Manual scheduled refresh failed. Check logs for details.")
+                except Exception as e:
+                    st.error(f"❌ Error during manual scheduled refresh: {e}")
+                
+                st.session_state.scheduler_refresh_clicked = False
+                st.session_state.scheduler_status = ""
+                rerun()
+    
+    except Exception as e:
+        st.error(f"❌ Error loading scheduler: {e}")
+        st.info("💡 Please check scheduler configuration and try again.")
     
     st.markdown("---")
 
@@ -793,50 +931,8 @@ with results_area:
                     update_editable_rate_source()
                     st.session_state.previous_toggle_value = st.session_state.rate_source_toggle
                 
-                # Filters with callbacks
-                with st.expander("Filter Displayed Rates", expanded=False):
-                    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-                    
-                    with filter_col1:
-                        st.date_input("Filter Start Date", key='filter_start_date', on_change=on_filter_change)
-                        st.date_input("Filter End Date", key='filter_end_date', on_change=on_filter_change)
-                        st.multiselect("Filter Properties", 
-                                     options=sorted(st.session_state.base_data[COL_PROPERTY_SRC].unique()),
-                                     key='filter_properties',
-                                     on_change=on_filter_change)
-                        st.multiselect("Filter Tiers", 
-                                     options=sorted(st.session_state.base_data[COL_CALCULATED_TIER_SRC].unique(), key=natural_sort_key_tier),
-                                     key='filter_tiers',
-                                     on_change=on_filter_change)
-                    
-                    with filter_col2:
-                        st.multiselect("Filter Day of Week", 
-                                     options=sorted(st.session_state.base_data[COL_DAY_OF_WEEK].unique()),
-                                     key='filter_dow',
-                                     on_change=on_filter_change)
-                        st.multiselect("Filter Flags", 
-                                     options=sorted(st.session_state.base_data[COL_FLAG].unique()),
-                                     key='filter_flags',
-                                     on_change=on_filter_change)
-                        st.multiselect("Filter Status", 
-                                     options=sorted(st.session_state.base_data[COL_STATUS].unique()),
-                                     key='filter_statuses',
-                                     on_change=on_filter_change)
-                    
-                    with filter_col3:
-                        st.number_input("Min Occ% (Curr)", key='filter_min_occ', step=0.1, format="%.1f", on_change=on_filter_change)
-                        st.number_input("Max Occ% (Curr)", key='filter_max_occ', step=0.1, format="%.1f", on_change=on_filter_change)
-                        st.number_input("Min Live Rate $", key='filter_min_live_rate', step=0.01, format="%.2f", on_change=on_filter_change)
-                        st.number_input("Max Live Rate $", key='filter_max_live_rate', step=0.01, format="%.2f", on_change=on_filter_change)
-                    
-                    with filter_col4:
-                        st.number_input("Min Delta %", key='filter_min_delta', step=0.1, format="%.1f", on_change=on_filter_change)
-                        st.number_input("Max Delta %", key='filter_max_delta', step=0.1, format="%.1f", on_change=on_filter_change)
-                        st.markdown("<br/>", unsafe_allow_html=True)
-                        st.button("Clear All Filters", key="clear_filters_m2_cb", on_click=clear_all_filter_states)
-
-                # Apply filters
-                display_df = st.session_state.filtered_data
+                # Use the base data directly - filtering is handled by the grid itself
+                display_df = st.session_state.base_data
 
                 # Reset index and use listing IDs
                 display_df = display_df.reset_index(drop=True)

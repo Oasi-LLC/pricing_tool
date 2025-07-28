@@ -175,14 +175,14 @@ properties:
   fb2: # Matches the directory name and --property argument (New Fredericksburg)
     name: "Fredericksburg Basse 2"
     pms: cloudbeds
-    total_units: 32 # Updated total units count
+    total_units: 23 # Updated total units count (removed 4 + Pool units)
     listings:
       # Lodge Units
       - {name: "The Lodge", id: "203812___643757", units: 1}
-      - {name: "The Lodge: King Room", id: "203812___643775", units: 8}
+      - {name: "Great Lodge: King Room", id: "203812___643775", units: 8}
+      - {name: "Great Lodge: King Room (Accessible)", id: "203812___657152", units: 2}
       
       # Cypress Lodge Units
-      - {name: "Cypress Lodge + Pool", id: "203812___643761", units: 2}
       - {name: "Cypress Lodge Pet-Friendly (Sleeps 2)", id: "203812___655825", units: 1}
       - {name: "Cypress Lodge Pet-Friendly (Sleeps 4)", id: "203812___655821", units: 1}
       - {name: "Cypress Lodge Pet-Friendly (Sleeps 6)", id: "203812___655829", units: 1}
@@ -198,11 +198,10 @@ properties:
       - {name: "Monolith", id: "203812___643773", units: 2}
       
       # Post Oak Units
-      - {name: "Post Oak", id: "203812___643760", units: 1}
+      - {name: "Post Oak (Pet-friendly)", id: "203812___643760", units: 1}
       
       # Quonset Units
       - {name: "Quonset", id: "203812___643764", units: 2}
-      - {name: "Quonset + Pool", id: "203812___643763", units: 1}
       
       # Spiral Units
       - {name: "Spiral", id: "203812___643772", units: 1}
@@ -210,14 +209,13 @@ properties:
       # Winecup Units
       - {name: "Winecup", id: "203812___643766", units: 1}
       - {name: "Winecup (Pet-friendly)", id: "203812___655703", units: 1}
-      - {name: "Winecup + Pool", id: "203812___643765", units: 1}
     rate_group_mapping:
       rate_1: ["203812___643772", "203812___643771", "203812___655699"] # Spiral, Diamond, Diamond Pet-friendly
-      rate_2: ["203812___643766", "203812___643764", "203812___643763", "203812___655703", "203812___643765"] # Winecup, Quonset, Quonset + Pool, Winecup Pet-friendly, Winecup + Pool
+      rate_2: ["203812___643766", "203812___643764", "203812___655703"] # Winecup, Quonset, Winecup Pet-friendly
       rate_3: ["203812___643757"] # The Lodge
-      rate_4: ["203812___643775"] # King Room (8 units)
+      rate_4: ["203812___643775", "203812___657152"] # King Room (8 units) + King Room (Accessible) (2 units)
       rate_5: ["203812___643773"] # Monolith (2 units)
-      rate_6: ["203812___643761", "203812___655825", "203812___655821", "203812___655829", "203812___655826", "203812___643762", "203812___655827"] # All Cypress Lodge units
+      rate_6: ["203812___655825", "203812___655821", "203812___655829", "203812___655826", "203812___643762", "203812___655827"] # All Cypress Lodge units
       rate_7: ["203812___643760"] # Post Oak
     booking_window_definitions:
       # Defines labels and day ranges for booking windows.
