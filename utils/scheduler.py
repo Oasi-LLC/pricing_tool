@@ -104,46 +104,62 @@ def get_next_refresh_time() -> Optional[datetime]:
 
 def is_time_to_refresh() -> bool:
     """Check if it's time to run a scheduled refresh"""
-    config = load_scheduler_config()
-    if not config.get('enabled', False):
-        return False
-    
-    # Get last refresh time from session state or file
-    last_refresh_file = Path("logs/last_scheduler_refresh.txt")
-    if last_refresh_file.exists():
-        try:
-            with open(last_refresh_file, 'r') as f:
-                last_refresh_str = f.read().strip()
-                last_refresh = datetime.fromisoformat(last_refresh_str)
-        except Exception as e:
-            logger.error(f"Error reading last refresh time: {e}")
+    try:
+        config = load_scheduler_config()
+        if not config.get('enabled', False):
+            return False
+        
+        # Get last refresh time from session state or file
+        last_refresh_file = Path("logs/last_scheduler_refresh.txt")
+        if last_refresh_file.exists():
+            try:
+                with open(last_refresh_file, 'r') as f:
+                    last_refresh_str = f.read().strip()
+                    last_refresh = datetime.fromisoformat(last_refresh_str)
+                    # Ensure timezone awareness for comparison
+                    if last_refresh.tzinfo is None:
+                        lisbon_tz = pytz.timezone('Europe/Lisbon')
+                        last_refresh = lisbon_tz.localize(last_refresh)
+            except Exception as e:
+                logger.error(f"Error reading last refresh time: {e}")
+                last_refresh = None
+        else:
             last_refresh = None
-    else:
-        last_refresh = None
-    
-    now = get_lisbon_time()
-    
-    # Check if we're within the refresh window (1 hour after scheduled time)
-    refresh_times = config.get('refresh_times', ["01:00", "13:00"])
-    for time_str in refresh_times:
-        try:
-            hour, minute = map(int, time_str.split(':'))
-            # Create timezone-aware scheduled time by using the same timezone as now
-            scheduled_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            # Ensure timezone awareness is preserved
-            if scheduled_time.tzinfo is None:
-                scheduled_time = now.tzinfo.localize(scheduled_time.replace(tzinfo=None))
-            
-            # Check if we're within 1 hour of the scheduled time
-            time_diff = abs((now - scheduled_time).total_seconds() / 3600)
-            if time_diff <= 1:  # Within 1 hour of scheduled time
-                # Check if we haven't already refreshed in this window
-                if last_refresh is None or (now - last_refresh).total_seconds() > 3600:  # More than 1 hour ago
-                    return True
-        except Exception as e:
-            logger.error(f"Error checking refresh time {time_str}: {e}")
-    
-    return False
+        
+        now = get_lisbon_time()
+        
+        # Validate that now is timezone-aware
+        if now.tzinfo is None:
+            logger.error("Current time is not timezone-aware, using Lisbon timezone")
+            lisbon_tz = pytz.timezone('Europe/Lisbon')
+            now = lisbon_tz.localize(now.replace(tzinfo=None))
+        
+        # Check if we're within the refresh window (1 hour after scheduled time)
+        refresh_times = config.get('refresh_times', ["01:00", "13:00"])
+        for time_str in refresh_times:
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                # Create timezone-aware scheduled time by using the same timezone as now
+                scheduled_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                # Ensure timezone awareness is preserved
+                if scheduled_time.tzinfo is None:
+                    scheduled_time = now.tzinfo.localize(scheduled_time.replace(tzinfo=None))
+                
+                # Check if we're within 1 hour of the scheduled time
+                time_diff = abs((now - scheduled_time).total_seconds() / 3600)
+                if time_diff <= 1:  # Within 1 hour of scheduled time
+                    # Check if we haven't already refreshed in this window
+                    if last_refresh is None or (now - last_refresh).total_seconds() > 3600:  # More than 1 hour ago
+                        logger.info(f"✅ Time to refresh! Current time: {now}, Scheduled time: {scheduled_time}")
+                        return True
+            except Exception as e:
+                logger.error(f"Error checking refresh time {time_str}: {e}")
+                continue
+        
+        return False
+    except Exception as e:
+        logger.error(f"Critical error in is_time_to_refresh: {e}")
+        return False
 
 def get_dynamic_date_range() -> tuple:
     """Calculate dynamic date range: from last month to end of current year"""

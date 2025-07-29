@@ -2,6 +2,34 @@
 
 This file documents all significant changes to the pricing tool codebase.
 
+## [v1.8.0] - 2025-07-29
+
+### Added
+- **Comprehensive Error Prevention System**: Implemented multiple safeguards to prevent timezone and variable scope errors
+- **System Health Monitoring**: `scripts/check_system_health.py` for monitoring all critical services
+- **Auto-Recovery System**: `scripts/auto_recovery.py` for automatically restarting failed services
+- **Enhanced Error Handling**: Comprehensive try-catch blocks and graceful failure handling
+- **Consecutive Error Tracking**: Prevents infinite error loops with exponential backoff
+- **Error Prevention Guide**: `ERROR_PREVENTION_GUIDE.md` with complete documentation of safeguards
+
+### Fixed
+- **Critical Timezone Error**: Fixed `"can't subtract offset-naive and offset-aware datetimes"` error that prevented scheduler from running
+- **Variable Scope Error**: Fixed `"data_col2 is not defined"` error in Streamlit app scheduler section
+- **Scheduler Reliability**: Enhanced scheduler daemon with better error handling and recovery mechanisms
+- **App Display Issues**: Fixed indentation errors and variable scope issues in scheduler status display
+
+### Changed
+- **Enhanced Scheduler Logic**: Improved timezone handling with proper localization of datetime objects
+- **Error Recovery**: Added automatic restart capabilities for failed services
+- **Log Management**: Implemented log rotation to prevent log bloat
+- **Process Monitoring**: Added health checks for all critical services
+
+### Technical Improvements
+- **Timezone Safety**: All datetime objects are now properly timezone-aware before comparison
+- **Variable Safety**: Fixed all variable scope issues in the Streamlit app
+- **Error Resilience**: System can now self-heal from common failure patterns
+- **Monitoring**: Real-time health monitoring with automatic alerting
+
 ## [v1.7.0] - 2025-07-28
 
 ### Added

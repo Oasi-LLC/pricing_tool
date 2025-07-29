@@ -39,6 +39,9 @@ def main():
     # Ensure logs directory exists
     Path("logs").mkdir(exist_ok=True)
     
+    consecutive_errors = 0
+    max_consecutive_errors = 5
+    
     while True:
         try:
             # Check if scheduler is enabled
@@ -46,6 +49,7 @@ def main():
             if not config.get('enabled', False):
                 logger.info("Scheduler is disabled. Waiting 5 minutes before checking again...")
                 time.sleep(300)  # Wait 5 minutes
+                consecutive_errors = 0  # Reset error counter
                 continue
             
             # Get current status
@@ -65,10 +69,13 @@ def main():
                 success = run_scheduled_refresh()
                 if success:
                     logger.info("✅ Scheduled refresh completed successfully!")
+                    consecutive_errors = 0  # Reset error counter on success
                 else:
                     logger.error("❌ Scheduled refresh failed!")
+                    consecutive_errors += 1
             else:
                 logger.info("Not time for refresh yet. Waiting 5 minutes...")
+                consecutive_errors = 0  # Reset error counter
             
             # Wait 5 minutes before checking again
             time.sleep(300)
@@ -77,9 +84,17 @@ def main():
             logger.info("Scheduler daemon stopped by user")
             break
         except Exception as e:
+            consecutive_errors += 1
             logger.error(f"Unexpected error in scheduler daemon: {e}")
-            logger.info("Waiting 5 minutes before retrying...")
-            time.sleep(300)
+            
+            # If we have too many consecutive errors, wait longer
+            if consecutive_errors >= max_consecutive_errors:
+                logger.error(f"Too many consecutive errors ({consecutive_errors}). Waiting 30 minutes before retrying...")
+                time.sleep(1800)  # Wait 30 minutes
+                consecutive_errors = 0  # Reset counter
+            else:
+                logger.info(f"Waiting 5 minutes before retrying... (Error {consecutive_errors}/{max_consecutive_errors})")
+                time.sleep(300)
 
 if __name__ == "__main__":
     main() 

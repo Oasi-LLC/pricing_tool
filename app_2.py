@@ -720,16 +720,16 @@ with config_area:
                 st.session_state.refresh_all_data_clicked = False
                 st.session_state.refresh_status = ""
     
-    # --- Scheduler Section ---
-    st.markdown("### ⏰ Auto-Refresh Scheduler")
+    # Auto-Refresh Scheduler Section
+    st.subheader("🔔 Auto-Refresh Scheduler")
     
-    # Get current scheduler status
     try:
+        # Get current scheduler status
         scheduler_status = get_scheduler_status()
         current_lisbon_time = get_lisbon_time()
         
-            # Load current config
-            config = load_scheduler_config()
+        # Load current config
+        config = load_scheduler_config()
         enabled = config.get('enabled', False)
         
         # Create a clean status card
@@ -757,63 +757,71 @@ with config_area:
             with col2:
                 # Enable/disable toggle
                 new_enabled = st.checkbox(
-                "Enable Auto-Refresh", 
+                    "Enable Auto-Refresh", 
                     value=enabled,
-                key="scheduler_enabled_checkbox",
+                    key="scheduler_enabled_checkbox",
                     help="Toggle automatic data refresh"
-            )
+                )
             
             # Save config if changed
-                if new_enabled != enabled:
-                    config['enabled'] = new_enabled
+            if new_enabled != enabled:
+                config['enabled'] = new_enabled
                 if save_scheduler_config(config):
-                        st.success("✅ Settings saved")
+                    st.success("✅ Settings saved")
                     rerun()
                 else:
-                        st.error("❌ Save failed")
+                    st.error("❌ Save failed")
         
         # Show essential timing info in a clean format
         st.markdown("---")
         
         # Data file timestamps
+        pl_daily_time = None
+        nightly_time = None
+        
         if current_selected_properties:
             prop = current_selected_properties[0]
             pl_daily_path = f"data/{prop}/pl_daily_{prop}.csv"
             nightly_path = f"data/{prop}/{prop}_nightly_pulled_overrides.csv"
-            pl_daily_time = None
-            nightly_time = None
+            
             if os.path.exists(pl_daily_path):
                 pl_daily_time = os.path.getmtime(pl_daily_path)
             if os.path.exists(nightly_path):
                 nightly_time = os.path.getmtime(nightly_path)
-            import datetime as dt
-            
-            # Data file status
+        
+        import datetime as dt
+        
+        # Data file status - ensure columns are always defined
+        try:
             data_col1, data_col2 = st.columns(2)
+            
             with data_col1:
                 st.markdown("**📊 Data Files Status:**")
-                if pl_daily_time:
+                if current_selected_properties and pl_daily_time:
                     st.markdown(f"• **Property Data:** {dt.datetime.fromtimestamp(pl_daily_time).strftime('%b %d, %H:%M')}")
                 else:
                     st.markdown("• **Property Data:** Not found")
-                if nightly_time:
+                if current_selected_properties and nightly_time:
                     st.markdown(f"• **Current Pricing:** {dt.datetime.fromtimestamp(nightly_time).strftime('%b %d, %H:%M')}")
-            else:
+                else:
                     st.markdown("• **Current Pricing:** Not found")
-        
+            
             with data_col2:
                 st.markdown("**⏰ Scheduler Status:**")
-        if enabled:
+                if enabled:
                     if scheduler_status.get('next_refresh'):
                         next_refresh = scheduler_status['next_refresh']
                         st.markdown(f"• **Next Refresh:** {next_refresh.strftime('%b %d, %H:%M')}")
-            if scheduler_status.get('last_refresh'):
-                last_refresh = scheduler_status['last_refresh']
+                    if scheduler_status.get('last_refresh'):
+                        last_refresh = scheduler_status['last_refresh']
                         st.markdown(f"• **Last Refresh:** {last_refresh.strftime('%b %d, %H:%M')}")
                     st.markdown(f"• **Current Time:** {current_lisbon_time.strftime('%b %d, %H:%M')} (Lisbon)")
                 else:
                     st.markdown("• **Status:** Auto-refresh disabled")
                     st.markdown(f"• **Current Time:** {current_lisbon_time.strftime('%b %d, %H:%M')} (Lisbon)")
+        except Exception as e:
+            st.error(f"❌ Error displaying scheduler status: {e}")
+            st.info("💡 Please check scheduler configuration and try again.")
         
         # Check if it's time to refresh and run if needed
         if enabled and is_time_to_refresh():
