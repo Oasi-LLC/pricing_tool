@@ -2,6 +2,34 @@
 
 This file documents all significant changes to the pricing tool codebase.
 
+## [v1.9.0] - 2025-01-15
+
+### Added
+- **Rules Adjuster System**: Comprehensive rule-based pricing adjustments for live rates
+- **Advanced Property Rules**: Sophisticated pricing rules with min-stay adjustments and adjacent day logic
+- **Enhanced Scheduler Documentation**: Complete rewrite of scheduler documentation with new auto-scheduler system
+- **Property Reconfiguration**: Removed edge1 and pm1 properties, enhanced others with advanced rules
+- **Min-Stay Logic**: Advanced logic for checking adjacent weekday minimum stay requirements
+- **Rate Adjustment Engine**: Multiplier-based pricing adjustments based on booking patterns
+- **Rules UI Integration**: Rules adjuster interface in both table and calendar views
+
+### Changed
+- **Property Configuration**: Added extensive adjustment rules to multiple properties (fb1, fb2, pblu1, atx1, sos1, spm1, flo1, melrose1)
+- **Scheduler Configuration**: Modified scheduler.yaml (disabled by default, reordered fields)
+- **Data Management**: Extended date ranges and added new listing configurations
+- **UI Enhancement**: Added rules adjuster expandable sections to main results area
+
+### Removed
+- **Properties**: edge1 (Edgecamp) and pm1 (Pamlico) properties completely removed
+- **Data Files**: Cleaned up old data files for removed properties
+- **Legacy Rules**: Replaced simple rules with advanced, configurable rule system
+
+### Technical Improvements
+- **Rules Engine**: New functions for applying property-specific rules to live rates
+- **Conditional Logic**: Support for complex booking conditions and adjacent day checks
+- **Rate Calculations**: Advanced pricing logic with fallback reference rates
+- **Min-Stay Management**: Intelligent minimum stay adjustments based on booking patterns
+
 ## [v1.8.0] - 2025-07-29
 
 ### Added

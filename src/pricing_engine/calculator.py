@@ -223,6 +223,24 @@ def _check_condition(
         adjacent_date = utils.add_days(current_date, day_offset)
         adjacent_date_str = utils.format_date(adjacent_date)
         return (listing_id, adjacent_date_str) in booked_blocked_set
+    elif cond_type == 'upcoming_weekend':
+        # Check if this is the immediate upcoming weekend
+        # Get today's date (we'll need to pass this as a parameter)
+        from datetime import datetime
+        today = datetime.now().date()
+        
+        # Calculate days until this Friday
+        current_weekday = current_date.weekday()
+        days_until_friday = (4 - today.weekday()) % 7  # 4 = Friday
+        if days_until_friday == 0:  # Today is Friday
+            days_until_friday = 7  # Next Friday
+        
+        # Calculate the immediate upcoming Friday
+        upcoming_friday = today + datetime.timedelta(days=days_until_friday)
+        upcoming_saturday = upcoming_friday + datetime.timedelta(days=1)
+        
+        # Return True only if current_date is the upcoming Friday or Saturday
+        return current_date in [upcoming_friday, upcoming_saturday]
     # --- Add other condition type checks here in the future ---
     else:
         print(f"Warning: Unknown condition type '{cond_type}'. Rule skipped.")
@@ -272,6 +290,7 @@ def apply_adjustment_rules(
                     break
 
             if all_conditions_met:
+                print(f"🔍 DEBUG: Rule '{rule.get('name', 'Unnamed Rule')}' conditions met for {listing_id} on {utils.format_date(current_date)}")
                 selected_action = None
                 for action in rule.get('actions', []):
                     nested_condition_config = action.get('condition')
@@ -316,6 +335,66 @@ def apply_adjustment_rules(
     # If no rules applied or succeeded, return None for both
     return None, None
 
+def apply_min_stay_adjustment_rules(
+    current_date: datetime.date,
+    listing_id: str,
+    booked_blocked_set: Set[Tuple[str, str]],
+    property_config: dict
+) -> Optional[Dict[str, Any]]:
+    """
+    Checks and applies minimum stay adjustment rules defined in the property configuration.
+    
+    Args:
+        current_date: The date for which the adjustment is being calculated.
+        listing_id: The specific listing ID.
+        booked_blocked_set: Set of ('listing_id', 'YYYY-MM-DD') for booked/blocked dates.
+        property_config: Property configuration including 'adjustment_rules'.
+        
+    Returns:
+        A dictionary containing adjustment information or None if no adjustment applies.
+        Format: {
+            'min_stay_adjustment': int,  # New minimum stay value
+            'target_adjacent_days': List[int],  # Days to apply adjustment to
+            'rule_name': str  # Name of the rule that triggered
+        }
+    """
+    rules = property_config.get('adjustment_rules', [])
+    if not rules:
+        return None # No rules defined
+
+    current_weekday = current_date.weekday()
+
+    for rule in rules:
+        if rule.get('target_weekday') == current_weekday:
+            all_conditions_met = True
+            for condition_config in rule.get('conditions', []):
+                if not _check_condition(condition_config, current_date, listing_id, booked_blocked_set):
+                    all_conditions_met = False
+                    break
+
+            if all_conditions_met:
+                selected_action = None
+                for action in rule.get('actions', []):
+                    nested_condition_config = action.get('condition')
+                    if _check_condition(nested_condition_config, current_date, listing_id, booked_blocked_set):
+                        selected_action = action
+                        break
+
+                if selected_action:
+                    min_stay_adjustment = selected_action.get('min_stay_adjustment')
+                    target_adjacent_days = selected_action.get('target_adjacent_days')
+                    
+                    if min_stay_adjustment is not None and target_adjacent_days is not None:
+                        print(f"Applying min stay rule '{rule.get('name', 'Unnamed Rule')}' for Listing ID {listing_id} on {utils.format_date(current_date)}")
+                        return {
+                            'min_stay_adjustment': min_stay_adjustment,
+                            'target_adjacent_days': target_adjacent_days,
+                            'rule_name': rule.get('name', 'Unnamed Rule')
+                        }
+
+    # If no rules applied or succeeded, return None
+    return None
+
 def apply_advanced_rules(
     current_date: datetime.date,
     listing_id: str,
@@ -343,7 +422,7 @@ def apply_advanced_rules(
         booked_blocked_set: Set of ('listing_id', 'YYYY-MM-DD') for booked/blocked dates.
         booking_window_label: Booking window label for current_date.
         property_config: Property configuration.
-        property_name: Name of the property (e.g., 'atx1', 'edge1').
+        property_name: Name of the property (e.g., 'atx1', 'fb1').
         today: Today's date.
     
     Returns:

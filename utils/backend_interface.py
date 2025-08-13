@@ -142,14 +142,24 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
             rate_table_df, date_tier_map, booked_blocked_set, occupancy_map, event_multiplier_map = dataloader.load_and_preprocess_data(prop_name, prop_config)
             logging.info(f"--- Data loaded for {prop_name}. Calculating rates... ---") # <-- Log info
 
-            # Use full 2-year date range for calculations but only return user's selected range
-            # But limit to dates that actually have data in the PL daily file
+            # Use full date range for calculations but only return user's selected range
+            # Extended to 2027 for future planning
             full_start_date = datetime.date(2025, 1, 1)
-            full_end_date = datetime.date(2025, 12, 31)  # Only use 2025 since that's what we have data for
+            full_end_date = datetime.date(2027, 12, 31)  # Extended to 2027 for future planning
             full_date_range = pd.date_range(full_start_date, full_end_date, freq='D')
             
             # User's selected date range for display
             user_date_range = pd.date_range(start_date, end_date, freq='D')
+            
+            # Load pl_daily data once per property for efficiency
+            pl_daily_path = f"data/{prop_name}/pl_daily_{prop_name}.csv"
+            pl_df = None
+            try:
+                pl_df = pd.read_csv(pl_daily_path)
+                # Fix date matching by extracting just the date part
+                pl_df['Date_clean'] = pl_df['Date'].str.split('T').str[0]
+            except Exception as e:
+                logging.error(f"Error loading pl_daily data for {prop_name}: {e}")
             
             # Process all dates for accurate occupancy calculations
             for current_date in full_date_range:
@@ -201,18 +211,43 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     pace = 0.0 # Placeholder
                     calculated_tier = None # Initialize calculated tier
 
-                    # --- Check if Fully Booked (Vacant Units = 0) ---
-                    if (listing_id, current_date_str) in booked_blocked_set:
+                    # --- Check booking status from pl_daily data FIRST (before rate calculation) ---
+                    # This ensures booking status is independent of rate calculation errors
+                    is_booked = False
+                    try:
+                        if pl_df is not None:
+                            listing_data = pl_df[
+                                (pl_df['Listing ID'].astype(str) == listing_id) & 
+                                (pl_df['Date_clean'] == current_date_str)
+                            ]
+                            
+                            if not listing_data.empty:
+                                row = listing_data.iloc[0]
+                                vacant_units = row.get('Vacant Units', 0)
+                                is_booked = vacant_units == 0
+                                logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} - Vacant Units: {vacant_units}, Is Booked: {is_booked}")
+                            else:
+                                logging.warning(f"DEBUG: No pl_daily data found for {listing_id} on {current_date_str}")
+                        else:
+                            logging.warning(f"DEBUG: pl_daily data not loaded for {prop_name}")
+                            # Fallback to booked_blocked_set check when pl_daily data is not available
+                            is_booked = (listing_id, current_date_str) in booked_blocked_set
+                    except Exception as e:
+                        logging.error(f"Error checking booking status for {listing_id} on {current_date_str}: {e}")
+                        # Fallback to booked_blocked_set check
+                        is_booked = (listing_id, current_date_str) in booked_blocked_set
+                    
+                    if is_booked:
                         flag = '🔒 Booked'
-                        # Skip rate calculation, set rates to None or 0? Let's use None.
+                        # Skip rate calculation, set rates to None
                         suggested_rate = None
                         adjusted_rate = None # Not applicable
                         calculated_tier = None # Not applicable
                         error_msg = None # Not applicable
-                        logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} is BOOKED")
+                        logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} is BOOKED (from pl_daily data)")
                     else:
-                        logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} is NOT booked (not in booked_blocked_set)")
-                        # --- Proceed with rate calculation only if not booked/blocked ---
+                        logging.info(f"DEBUG: Listing {listing_id} on {current_date_str} is NOT booked (from pl_daily data)")
+                        # --- Proceed with rate calculation only if not booked ---
 
                         # Check advanced adjustment rules first
                         # Now returns a tuple: (rate, tier)
@@ -253,9 +288,8 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                             flag = "🗓️ " + flag
 
                         if error_msg:
-                            # Decide how to handle lookup errors - skip row, default rate, specific flag?
-                            # st.warning(f"Rate lookup error for {listing_id} on {current_date_str}: {error_msg}")
-                            logging.warning(f"Rate lookup error for Prop:{prop_name} Listing:{listing_id} Date:{current_date_str} - {error_msg}") # <-- Log the specific error
+                            # Rate lookup error - but we know the listing is available
+                            logging.warning(f"Rate lookup error for Prop:{prop_name} Listing:{listing_id} Date:{current_date_str} - {error_msg}")
                             flag = '❌ Error' # Indicate lookup error
                             suggested_rate = None # Ensure rate is None on error
 

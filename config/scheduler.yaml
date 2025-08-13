@@ -1,20 +1,19 @@
 scheduler:
-  enabled: true
-  refresh_times: ["01:00", "13:00"]
-  timezone: "Europe/Lisbon"
-  max_retries: 3
-  retry_delay_minutes: 1
   data_range:
-    start_date: "2025-01-01"
-    end_date: "2026-12-31"
-  # Properties to refresh: "all" for all properties, or list specific properties like ["fb1", "wb1"]
-  properties: "all"
-  # Smart refresh: only refresh properties that haven't been updated recently
-  smart_refresh: true
-  # Maximum age (in hours) before a property needs refreshing
+    end_date: '2026-12-31'
+    start_date: '2025-01-01'
+  enabled: false
   max_data_age_hours: 24
+  max_retries: 3
+  properties: all
   rate_limiting:
     delay_between_operations: 30
     delay_between_properties: 10
     delay_on_rate_limit: 300
-    max_api_calls_per_minute: 60 
+    max_api_calls_per_minute: 60
+  refresh_times:
+  - 01:00
+  - '13:00'
+  retry_delay_minutes: 1
+  smart_refresh: true
+  timezone: Europe/Lisbon

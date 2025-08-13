@@ -285,9 +285,16 @@ def save_pl_daily_csv(pl_daily_data, property_key, output_dir=None):
     
     return filepath
 
-def test_property(property_key, start_date="2025-07-07", end_date="2025-07-13"):
+def test_property(property_key, start_date=None, end_date="2027-12-31"):
     """Test pl_daily generation for a specific property."""
+    # If no start_date provided, use one month before today
+    if start_date is None:
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+    
     print(f"🧪 Testing pl_daily generation for {property_key}")
+    print(f"📅 Date range: {start_date} to {end_date}")
     print("=" * 60)
     
     # Generate pl_daily data
@@ -310,9 +317,9 @@ def test_property(property_key, start_date="2025-07-07", end_date="2025-07-13"):
 if __name__ == "__main__":
     import sys
     
-    # Default 2-year date range
-    default_start_date = "2025-01-01"
-    default_end_date = "2026-12-31"
+    # Default date range - start_date will be dynamic (one month before today)
+    default_start_date = None  # Will be set to one month before today
+    default_end_date = "2027-12-31"
     
     # Check if property key is provided as command line argument
     if len(sys.argv) > 1:
@@ -327,20 +334,31 @@ if __name__ == "__main__":
             print("=" * 60)
             test_property(property_key, start_date, end_date)
         else:
+            # Calculate dynamic start date (one month before today)
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            dynamic_start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+            
             print(f"🧪 Testing pl_daily generation for {property_key}")
-            print(f"📅 Date range: {default_start_date} to {default_end_date}")
+            print(f"📅 Date range: {dynamic_start_date} to {default_end_date}")
             print("=" * 60)
-            test_property(property_key, default_start_date, default_end_date)
+            test_property(property_key, dynamic_start_date, default_end_date)
     else:
-        # Test with all properties for the full 2-year range if no argument provided
+        # Test with all properties for the full range if no argument provided
         import yaml
         with open('config/properties.yaml', 'r') as f:
             config = yaml.safe_load(f)
         all_properties = list(config['properties'].keys())
+        
+        # Calculate dynamic start date (one month before today)
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        dynamic_start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+        
         for property_key in all_properties:
             print(f"\n{'='*80}")
             print(f"🧪 Testing pl_daily generation for {property_key}")
-            print(f"📅 Date range: {default_start_date} to {default_end_date}")
+            print(f"📅 Date range: {dynamic_start_date} to {default_end_date}")
             print("=" * 60)
-            test_property(property_key, default_start_date, default_end_date)
+            test_property(property_key, dynamic_start_date, default_end_date)
             print(f"{'='*80}\n") 
