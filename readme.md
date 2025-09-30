@@ -18,6 +18,7 @@ This tool is a dynamic, multi-property hotel and short-term rental rate manageme
 - **Rate limit handling** with retry logic and configurable delays
 - **API integration** for live rates and data sync
 - **Comprehensive logging and output tracking**
+- **Rate Evolution Tracking** with tools to analyze rate changes over time
 - **Easy property onboarding** via config and data files
 
 ---
@@ -91,6 +92,47 @@ Rules are configured in `config/properties.yaml` for each property, allowing for
 - Complex booking conditions (adjacent days, consecutive patterns)
 - Multiple action types (price multipliers, min-stay changes)
 - Adjacent day minimum stay prerequisites
+
+---
+
+## Logging & Rate Evolution Tracking
+
+The pricing tool now includes comprehensive logging and rate evolution tracking capabilities:
+
+### Logging System
+- **Price Update Logs**: Track all rate changes with detailed information
+- **Error Logs**: Capture API errors and system failures with context
+- **Rule Application Logs**: Log all automatic rule-based adjustments
+- **Manual Change Logs**: Track user-initiated rate modifications
+
+### Rate Evolution Tracking
+Track how rates evolve over time for any listing and date:
+
+```bash
+# List all available dates for a listing
+python daily_rate_tracker.py --listing-id 299754 --list-dates
+
+# Track rate evolution for a specific date
+python daily_rate_tracker.py --listing-id 299754 --target-date 2025-10-16
+
+# See all listings with rate changes
+python rate_evolution_demo.py --list-all
+
+# Create visual graphs of rate evolution
+python rate_evolution_tracker.py --listing-id 299754 --target-date 2025-10-16 --output rate_evolution.png
+```
+
+### Log Files
+- `logs/pricing_updates_*.log` - All rate changes with timestamps and reasons
+- `logs/errors_*.log` - System errors and API failures
+- `logs/rate_generation_*.log` - Rate calculation and generation logs
+
+### What Gets Logged
+- **Rate Pushes**: Every successful rate push to PriceLabs
+- **Manual Changes**: All user adjustments made in the frontend
+- **Rule Adjustments**: Automatic rule-based rate modifications
+- **API Errors**: Failed pushes and connection issues
+- **System Events**: Data pulls, refreshes, and configuration changes
 
 ---
 

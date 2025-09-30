@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import pytz
 import os
+from .progress_tracker import progress_tracker
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -148,8 +149,8 @@ def is_time_to_refresh() -> bool:
                 # Check if we're within 1 hour of the scheduled time
                 time_diff = abs((now - scheduled_time).total_seconds() / 3600)
                 if time_diff <= 1:  # Within 1 hour of scheduled time
-                    # Check if we haven't already refreshed in this window
-                    if last_refresh is None or (now - last_refresh).total_seconds() > 3600:  # More than 1 hour ago
+                    # Check if we haven't already refreshed in this window (reduced to 5 minutes for testing)
+                    if last_refresh is None or (now - last_refresh).total_seconds() > 300:  # More than 5 minutes ago
                         logger.info(f"✅ Time to refresh! Current time: {now}, Scheduled time: {scheduled_time}")
                         return True
             except Exception as e:
@@ -163,24 +164,9 @@ def is_time_to_refresh() -> bool:
 
 def get_dynamic_date_range() -> tuple:
     """Calculate dynamic date range: from last month to end of current year"""
-    from datetime import datetime, timedelta
-    import calendar
+    from utils.date_manager import get_scheduler_dynamic_range
     
-    today = datetime.now()
-    
-    # Calculate start date (first day of last month)
-    if today.month == 1:
-        start_year = today.year - 1
-        start_month = 12
-    else:
-        start_year = today.year
-        start_month = today.month - 1
-    
-    start_date = datetime(start_year, start_month, 1)
-    
-    # Calculate end date (last day of current year)
-    end_date = datetime(today.year, 12, 31)
-    
+    start_date, end_date = get_scheduler_dynamic_range()
     return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
 def get_properties_needing_refresh() -> list:
@@ -288,63 +274,119 @@ def estimate_api_call_volume() -> dict:
         }
 
 def run_nightly_pull_with_retry() -> bool:
-    """Run nightly pull with retry logic"""
+    """Run nightly pull with retry logic and enhanced progress tracking"""
     config = load_scheduler_config()
     max_retries = config.get('max_retries', 3)
     retry_delay = config.get('retry_delay_minutes', 1) * 60  # Convert to seconds
     
     # Get dynamic date range
     start_date, end_date = get_dynamic_date_range()
-    logger.info(f"Running nightly pull for date range: {start_date} to {end_date}")
+    logger.info(f"📅 Date range: {start_date} to {end_date}")
+    
+    # Get total listings for progress tracking
+    try:
+        import yaml
+        with open('config/properties.yaml', 'r') as f:
+            yaml_config = yaml.safe_load(f)
+        
+        total_listings = 0
+        for prop in progress_tracker.properties_to_process:
+            if prop in yaml_config['properties']:
+                total_listings += len(yaml_config['properties'][prop].get('listings', []))
+        
+        logger.info(f"📊 Processing {total_listings} listings across {len(progress_tracker.properties_to_process)} properties")
+        
+    except Exception as e:
+        logger.error(f"Error counting listings: {e}")
+        total_listings = 0
     
     for attempt in range(max_retries):
         try:
-            logger.info(f"Running nightly pull (attempt {attempt + 1}/{max_retries})")
+            logger.info(f"🔄 Running nightly pull (attempt {attempt + 1}/{max_retries})")
+            progress_tracker.update_step_progress(10, f"Starting nightly pull (attempt {attempt + 1})")
             
             # Run the nightly pull script with date range
+            start_time = time.time()
             result = subprocess.run([
                 sys.executable, "rates/pull/nightly_pull.py", start_date, end_date
             ], capture_output=True, text=True, cwd=".")
             
+            duration = time.time() - start_time
+            
             if result.returncode == 0:
-                logger.info("Nightly pull completed successfully")
+                logger.info(f"✅ Nightly pull completed successfully in {duration/60:.1f} minutes")
+                progress_tracker.update_step_progress(100, "Nightly pull completed")
+                
+                # Update API calls made (1 per listing)
+                progress_tracker.api_calls_made += total_listings
+                progress_tracker._update_status_file()
+                
                 return True
             else:
-                logger.error(f"Nightly pull failed (attempt {attempt + 1}): {result.stderr}")
+                error_msg = f"Nightly pull failed (attempt {attempt + 1}): {result.stderr}"
+                logger.error(error_msg)
+                progress_tracker.add_error(error_msg)
                 
         except Exception as e:
-            logger.error(f"Nightly pull error (attempt {attempt + 1}): {e}")
+            error_msg = f"Nightly pull error (attempt {attempt + 1}): {e}"
+            logger.error(error_msg)
+            progress_tracker.add_error(error_msg)
         
         # Wait before retry (except on last attempt)
         if attempt < max_retries - 1:
-            logger.info(f"Waiting {retry_delay} seconds before retry...")
+            logger.info(f"⏳ Waiting {retry_delay} seconds before retry...")
+            progress_tracker.update_step_progress(50, f"Waiting before retry (attempt {attempt + 1})")
             time.sleep(retry_delay)
     
-    logger.error(f"Nightly pull failed after {max_retries} attempts")
+    logger.error(f"❌ Nightly pull failed after {max_retries} attempts")
+    progress_tracker.update_step_progress(0, "Nightly pull failed")
     return False
 
 def run_pl_daily_generation_with_retry() -> bool:
-    """Run pl_daily generation with retry logic and rate limiting - process properties individually"""
+    """Run pl_daily generation with retry logic, rate limiting, and enhanced progress tracking"""
     config = load_scheduler_config()
     max_retries = config.get('max_retries', 3)
     retry_delay = config.get('retry_delay_minutes', 1) * 60  # Convert to seconds
     
     # Get dynamic date range
     start_date, end_date = get_dynamic_date_range()
-    logger.info(f"Running pl_daily generation for date range: {start_date} to {end_date}")
+    logger.info(f"📅 Date range: {start_date} to {end_date}")
     
     # Get properties that need refreshing
     properties_to_refresh = get_properties_needing_refresh()
     if not properties_to_refresh:
         logger.info("No properties need PL daily generation. Skipping.")
+        progress_tracker.update_step_progress(100, "No properties needed PL daily generation")
         return True
     
-    logger.info(f"Processing PL daily generation for {len(properties_to_refresh)} properties individually")
+    logger.info(f"📊 Processing PL daily generation for {len(properties_to_refresh)} properties individually")
+    
+    # Get total listings for progress tracking
+    try:
+        import yaml
+        with open('config/properties.yaml', 'r') as f:
+            yaml_config = yaml.safe_load(f)
+        
+        total_listings = 0
+        property_listings = {}
+        for prop in properties_to_refresh:
+            if prop in yaml_config['properties']:
+                listings_count = len(yaml_config['properties'][prop].get('listings', []))
+                property_listings[prop] = listings_count
+                total_listings += listings_count
+        
+        logger.info(f"📈 Total listings to process: {total_listings}")
+        
+    except Exception as e:
+        logger.error(f"Error counting listings: {e}")
+        total_listings = 0
+        property_listings = {}
     
     # Add rate limiting delay before starting PL daily generation
     rate_limiting_config = config.get('rate_limiting', {})
     delay_between_ops = rate_limiting_config.get('delay_between_operations', 30)
-    logger.info(f"Waiting {delay_between_ops} seconds before PL daily generation to respect API rate limits...")
+    logger.info(f"⏳ Waiting {delay_between_ops} seconds before PL daily generation to respect API rate limits...")
+    progress_tracker.update_step_progress(5, f"Waiting {delay_between_ops}s for rate limit reset")
     time.sleep(delay_between_ops)
     
     successful_properties = []
@@ -352,13 +394,20 @@ def run_pl_daily_generation_with_retry() -> bool:
     
     # Process each property individually to avoid timeouts
     for i, property_key in enumerate(properties_to_refresh):
-        logger.info(f"Processing property {i+1}/{len(properties_to_refresh)}: {property_key}")
+        property_start_time = time.time()
+        listings_count = property_listings.get(property_key, 0)
+        
+        logger.info(f"🔄 Property {i+1}/{len(properties_to_refresh)}: {property_key} ({listings_count} listings)")
+        progress_tracker.update_step_progress(
+            (i / len(properties_to_refresh)) * 100, 
+            f"Processing {property_key} ({listings_count} listings)"
+        )
         
         # Retry logic for individual property
         property_success = False
         for attempt in range(max_retries):
             try:
-                logger.info(f"Running PL daily generation for {property_key} (attempt {attempt + 1}/{max_retries})")
+                logger.info(f"🔄 Running PL daily generation for {property_key} (attempt {attempt + 1}/{max_retries})")
                 
                 # Run the pl_daily generation script for individual property
                 result = subprocess.run([
@@ -367,44 +416,68 @@ def run_pl_daily_generation_with_retry() -> bool:
                 ], capture_output=True, text=True, cwd=".")
                 
                 if result.returncode == 0:
-                    logger.info(f"PL daily generation completed successfully for {property_key}")
+                    duration = time.time() - property_start_time
+                    logger.info(f"✅ PL daily generation completed successfully for {property_key} in {duration/60:.1f}m")
                     successful_properties.append(property_key)
                     property_success = True
+                    
+                    # Update progress tracker
+                    progress_tracker.complete_property(property_key, True, duration, listings_count * 2)
                     break
                 else:
-                    logger.error(f"PL daily generation failed for {property_key} (attempt {attempt + 1}): {result.stderr}")
+                    error_msg = f"PL daily generation failed for {property_key} (attempt {attempt + 1}): {result.stderr}"
+                    logger.error(error_msg)
+                    progress_tracker.add_error(error_msg)
                     
                     # Check if it's a rate limit error
                     if "rate limit" in result.stderr.lower() or "429" in result.stderr:
                         delay_on_rate_limit = rate_limiting_config.get('delay_on_rate_limit', 300)
-                        logger.warning(f"Rate limit detected for {property_key}. Waiting {delay_on_rate_limit} seconds before retry...")
+                        logger.warning(f"⚠️ Rate limit detected for {property_key}. Waiting {delay_on_rate_limit} seconds before retry...")
+                        progress_tracker.update_step_progress(
+                            (i / len(properties_to_refresh)) * 100, 
+                            f"Rate limit hit for {property_key}, waiting {delay_on_rate_limit}s"
+                        )
                         time.sleep(delay_on_rate_limit)  # Wait for rate limit to reset
                     
             except Exception as e:
-                logger.error(f"PL daily generation error for {property_key} (attempt {attempt + 1}): {e}")
+                error_msg = f"PL daily generation error for {property_key} (attempt {attempt + 1}): {e}"
+                logger.error(error_msg)
+                progress_tracker.add_error(error_msg)
             
             # Wait before retry (except on last attempt)
             if attempt < max_retries - 1:
-                logger.info(f"Waiting {retry_delay} seconds before retry for {property_key}...")
+                logger.info(f"⏳ Waiting {retry_delay} seconds before retry for {property_key}...")
+                progress_tracker.update_step_progress(
+                    (i / len(properties_to_refresh)) * 100, 
+                    f"Waiting {retry_delay}s before retry for {property_key}"
+                )
                 time.sleep(retry_delay)
         
         if not property_success:
             failed_properties.append(property_key)
-            logger.error(f"PL daily generation failed for {property_key} after {max_retries} attempts")
+            logger.error(f"❌ PL daily generation failed for {property_key} after {max_retries} attempts")
+            progress_tracker.complete_property(property_key, False, time.time() - property_start_time, 0)
         
         # Add delay between properties to avoid overwhelming the API
         if i < len(properties_to_refresh) - 1:  # Don't delay after the last property
             delay_between_properties = rate_limiting_config.get('delay_between_properties', 10)
-            logger.info(f"Waiting {delay_between_properties} seconds before next property...")
+            logger.info(f"⏳ Waiting {delay_between_properties} seconds before next property...")
+            progress_tracker.update_step_progress(
+                ((i + 1) / len(properties_to_refresh)) * 100, 
+                f"Waiting {delay_between_properties}s before next property"
+            )
             time.sleep(delay_between_properties)
     
     # Summary
-    logger.info(f"PL daily generation summary:")
+    logger.info(f"📊 PL daily generation summary:")
     logger.info(f"  - Successful: {len(successful_properties)} properties")
     logger.info(f"  - Failed: {len(failed_properties)} properties")
     
     if failed_properties:
-        logger.warning(f"Failed properties: {failed_properties}")
+        logger.warning(f"⚠️ Failed properties: {failed_properties}")
+    
+    # Update final progress
+    progress_tracker.update_step_progress(100, "PL daily generation completed")
     
     # Return True if at least some properties succeeded
     return len(successful_properties) > 0
@@ -474,7 +547,7 @@ def log_refresh_attempt(success: bool, error_message: str = None):
         logger.error(f"Error logging refresh attempt: {e}")
 
 def run_scheduled_refresh() -> bool:
-    """Run the complete scheduled refresh process"""
+    """Run the complete scheduled refresh process with enhanced progress tracking"""
     logger.info("Starting scheduled data refresh")
     
     # Get properties that need refreshing
@@ -487,6 +560,7 @@ def run_scheduled_refresh() -> bool:
     logger.info(f"Properties needing refresh: {properties_to_refresh}")
     
     # Estimate API call volume for these specific properties
+    total_calls = 0
     try:
         import yaml
         with open('config/properties.yaml', 'r') as f:
@@ -519,37 +593,50 @@ def run_scheduled_refresh() -> bool:
     except Exception as e:
         logger.error(f"Error estimating API call volume: {e}")
     
+    # Initialize progress tracker
+    progress_tracker.start_refresh(properties_to_refresh, total_calls)
+    
     try:
         # Step 1: Run nightly pull
-        logger.info("🔄 Step 1/2: Running nightly pull...")
+        progress_tracker.start_step("nightly_pull", 1)
         nightly_success = run_nightly_pull_with_retry()
         if not nightly_success:
             error_msg = "Nightly pull failed after all retries"
+            progress_tracker.add_error(error_msg)
+            progress_tracker.complete_refresh(False)
             log_refresh_attempt(False, error_msg)
             return False
         
         # Step 2: Run pl_daily generation
-        logger.info("🔄 Step 2/2: Running pl_daily generation...")
+        progress_tracker.start_step("pl_daily_generation", 2)
         pl_daily_success = run_pl_daily_generation_with_retry()
         if not pl_daily_success:
             error_msg = "PL daily generation failed after all retries"
+            progress_tracker.add_error(error_msg)
+            progress_tracker.complete_refresh(False)
             log_refresh_attempt(False, error_msg)
             return False
         
         # Step 3: Verify refresh success
         logger.info("🔍 Verifying refresh success...")
+        progress_tracker.update_step_progress(95, "Verifying refresh success")
         if not verify_refresh_success():
             error_msg = "Refresh verification failed - files not updated"
+            progress_tracker.add_error(error_msg)
+            progress_tracker.complete_refresh(False)
             log_refresh_attempt(False, error_msg)
             return False
         
         # Success
-        logger.info("✅ Scheduled refresh completed successfully")
+        progress_tracker.update_step_progress(100, "Refresh completed successfully")
+        progress_tracker.complete_refresh(True)
         log_refresh_attempt(True)
         return True
         
     except Exception as e:
         error_msg = f"Unexpected error during scheduled refresh: {e}"
+        progress_tracker.add_error(error_msg)
+        progress_tracker.complete_refresh(False)
         logger.error(error_msg)
         log_refresh_attempt(False, error_msg)
         return False

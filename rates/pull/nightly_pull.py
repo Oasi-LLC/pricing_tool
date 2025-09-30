@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import time # Add this import
 from typing import List, Dict, Optional
+import requests
 
 # Determine project root relative to this script's location (rates/pull/nightly_pull.py)
 # Assumes the script is in rates/pull/ and config is in config/
@@ -64,6 +65,54 @@ except ImportError as e:
     # Exit if we can't even get the API client
     sys.exit(1)
 
+# --- Retry Logic for API Calls ---
+def fetch_overrides_with_retry(api_client, listing_id: str, pms: str, max_retries: int = 3, retry_delay: int = 30) -> Optional[Dict]:
+    """Fetch overrides for a listing with retry logic and rate limit handling."""
+    listing_name = "Unknown"  # Will be updated by caller if available
+    
+    for attempt in range(max_retries):
+        try:
+            logger.debug(f"Fetching overrides for {listing_id} (attempt {attempt + 1}/{max_retries})")
+            overrides_response = api_client.get_listing_overrides(listing_id, pms=pms)
+            logger.debug(f"Successfully fetched overrides for {listing_id}")
+            return overrides_response
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:  # Rate limited
+                if attempt < max_retries - 1:
+                    logger.warning(f"Rate limited (429) for {listing_id}, waiting {retry_delay}s before retry {attempt + 1}/{max_retries}...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"Overrides fetch failed after {max_retries} attempts due to rate limiting for {listing_id}")
+                    raise e
+            else:
+                logger.error(f"Overrides fetch failed with HTTP error for {listing_id}: {e}")
+                raise e
+                
+        except PriceLabsAPIError as api_err:
+            if "429" in str(api_err) or "rate limit" in str(api_err).lower():
+                if attempt < max_retries - 1:
+                    logger.warning(f"Rate limited for {listing_id}, waiting {retry_delay}s before retry {attempt + 1}/{max_retries}...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"Overrides fetch failed after {max_retries} attempts due to rate limiting for {listing_id}")
+                    raise api_err
+            else:
+                logger.error(f"API Error fetching overrides for {listing_id}: {api_err}")
+                raise api_err
+                
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Overrides fetch failed for {listing_id}, waiting {retry_delay}s before retry {attempt + 1}/{max_retries}...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"Overrides fetch failed with error for {listing_id}: {e}")
+                raise e
+    
+    return None
+
 # --- Configuration Loading ---
 def load_full_config() -> Optional[Dict]:
     """Loads the entire properties configuration from the YAML file."""
@@ -87,16 +136,26 @@ def load_full_config() -> Optional[Dict]:
         return None
 
 # --- Main Pull Logic ---
-def run_nightly_pull():
+def run_nightly_pull(progress_callback=None, status_callback=None):
+    """
+    Run nightly pull with optional progress callbacks for UI updates.
+    
+    Args:
+        progress_callback: Function to call with progress (0.0 to 1.0)
+        status_callback: Function to call with status messages
+    """
     logger.info("Starting nightly override pull...")
+    
+    if status_callback:
+        status_callback("Starting nightly override pull...")
 
     # --- Date Calculation ---
-    today = datetime.now().date()
-    start_date = today
-    end_date = today + timedelta(days=365) # Extend to 365 days
+    from utils.date_manager import get_nightly_pull_range
+    
+    start_date, end_date = get_nightly_pull_range()
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
-    today_str = today.strftime('%Y-%m-%d')
+    today_str = datetime.now().date().strftime('%Y-%m-%d')
     logger.info(f"Fetching overrides from {start_date_str} to {end_date_str}")
 
     # Log start of execution
@@ -111,17 +170,27 @@ def run_nightly_pull():
             logger.critical("Failed to load property configurations. Aborting.")
             raise ValueError("Failed to load property configurations.") # Raise error to be caught
 
-        # --- Initialize API Client ---
+        # --- Initialize API Client with Connection Pooling ---
         try:
             api_client = PriceLabsAPI()
-            logger.info("PriceLabs API client initialized.")
+            logger.info("PriceLabs API client initialized with connection pooling.")
+            logger.info("Using persistent HTTP session for all API calls to improve performance.")
         except Exception as e:
             logger.critical(f"Failed to initialize PriceLabs API client: {e}")
             raise # Re-raise to be caught by outer try/except
 
         # --- Process Each Property ---
-        for property_name, config in properties_config.items():
+        total_properties = len(properties_config)
+        for i, (property_name, config) in enumerate(properties_config.items()):
             logger.info(f"--- Processing Property: {property_name} ---")
+            
+            # Update progress
+            if progress_callback:
+                progress = (i + 1) / total_properties
+                progress_callback(progress)
+            
+            if status_callback:
+                status_callback(f"Processing {property_name} ({i+1}/{total_properties})")
             property_pms = config.get('pms')
             property_listings = config.get('listings', [])
 
@@ -133,7 +202,9 @@ def run_nightly_pull():
                 continue
 
             property_overrides_data = [] # Collect data for this property
+            failed_listings = [] # Track failed listings for retry
 
+            # First pass: Process all listings with retry logic
             for listing_info in property_listings:
                 listing_id = str(listing_info.get('id'))
                 listing_name = listing_info.get('name', 'N/A')
@@ -144,9 +215,17 @@ def run_nightly_pull():
                 logger.debug(f"Fetching overrides for Listing ID: {listing_id} (Name: {listing_name}, PMS: {property_pms})")
 
                 try:
-                    # Fetch all overrides for the listing
-                    time.sleep(1) # Add a 1-second delay before the API call
-                    overrides_response = api_client.get_listing_overrides(listing_id, pms=property_pms)
+                    # Add a 0.5-second delay before the API call to respect rate limits (optimized)
+                    time.sleep(0.5)
+                    
+                    # Use retry logic for fetching overrides
+                    overrides_response = fetch_overrides_with_retry(api_client, listing_id, property_pms, max_retries=3, retry_delay=30)
+                    
+                    if overrides_response is None:
+                        logger.error(f"Failed to fetch overrides for {listing_id} after all retries")
+                        failed_listings.append(listing_info)
+                        continue
+                    
                     all_listing_overrides = overrides_response.get('overrides', [])
                     logger.debug(f"Received {len(all_listing_overrides)} total overrides for {listing_id}.")
 
@@ -182,30 +261,82 @@ def run_nightly_pull():
                                 # Log specific date processing error, but don't abort the whole run
                                 logger.error(f"Error processing date for override in {listing_id} ({override_date_str}): {date_exc}")
 
-                except PriceLabsAPIError as api_err:
-                    logger.error(f"API Error fetching overrides for {listing_id}: {api_err}")
-                    # Log error but continue to next listing/property if possible
+                except Exception as e:
+                    logger.error(f"Unexpected error processing {listing_id}: {e}")
+                    failed_listings.append(listing_info)
                     # Log detailed error using log_error if available
                     log_error(
-                        logger=logger, # Use current logger
-                        error_reason=f"API Error fetching overrides: {api_err}",
-                        listing_id=listing_id,
-                        listing_name=listing_name,
-                        pms_name=property_pms
-                        # Removed args no longer needed here: start_date, end_date, old_price, new_price, currency
-                        # Add other relevant fields if needed/available
-                    )
-                except Exception as e:
-                    logger.error(f"Unexpected error fetching overrides for {listing_id}: {e}")
-                    # Log error but continue to next listing/property if possible
-                    log_error(
                         logger=logger,
-                        error_reason=f"Unexpected error fetching overrides: {e}",
+                        error_reason=f"Unexpected error processing listing: {e}",
                         listing_id=listing_id,
                         listing_name=listing_name,
                         pms_name=property_pms
-                        # Removed args no longer needed here: start_date, end_date, old_price, new_price, currency
                     )
+
+            # Second pass: Retry failed listings sequentially with longer delays
+            if failed_listings:
+                logger.info(f"Retrying {len(failed_listings)} failed listings for property '{property_name}'...")
+                retry_delay = 60  # 60 seconds between retries for failed listings
+                
+                for i, listing_info in enumerate(failed_listings):
+                    listing_id = str(listing_info.get('id'))
+                    listing_name = listing_info.get('name', 'N/A')
+                    
+                    logger.info(f"Retrying {listing_name} ({listing_id}) - {i+1}/{len(failed_listings)}")
+                    
+                    try:
+                        # Add delay between retries to avoid rate limiting
+                        if i > 0:
+                            logger.info(f"Waiting {retry_delay}s before retry...")
+                            time.sleep(retry_delay)
+                        
+                        # Use retry logic for fetching overrides
+                        overrides_response = fetch_overrides_with_retry(api_client, listing_id, property_pms, max_retries=3, retry_delay=60)
+                        
+                        if overrides_response is None:
+                            logger.error(f"Failed to fetch overrides for {listing_id} after retry")
+                            continue
+                        
+                        all_listing_overrides = overrides_response.get('overrides', [])
+                        logger.info(f"Successfully retried {listing_name} - received {len(all_listing_overrides)} overrides")
+
+                        # Filter for fixed price types and date range
+                        for override in all_listing_overrides:
+                            if override.get('price_type') == 'fixed':
+                                override_date_str = override.get('date')
+                                if not override_date_str:
+                                    continue
+
+                                try:
+                                    override_date = datetime.strptime(override_date_str, '%Y-%m-%d').date()
+                                    if start_date <= override_date <= end_date:
+                                        price = override.get('price')
+                                        currency = override.get('currency')
+                                        min_stay = override.get('min_stay')
+
+                                        if price is not None:
+                                            property_overrides_data.append({
+                                                'listing_id': listing_id,
+                                                'date': override_date_str,
+                                                'price': price,
+                                                'currency': currency,
+                                                'min_stay': min_stay
+                                            })
+
+                                except (ValueError, Exception):
+                                    continue  # Skip invalid dates
+                        
+                        logger.info(f"Successfully processed retry for {listing_name}")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to retry {listing_name}: {e}")
+                        log_error(
+                            logger=logger,
+                            error_reason=f"Failed to retry listing: {e}",
+                            listing_id=listing_id,
+                            listing_name=listing_name,
+                            pms_name=property_pms
+                        )
 
             # --- Save Property Data to CSV ---
             if property_overrides_data:
@@ -254,6 +385,14 @@ def run_nightly_pull():
         execution_logger.error(f"FAILURE - Override pull failed: {type(e).__name__}: {e}")
         
     finally:
+        # Clean up API client session
+        try:
+            if 'api_client' in locals() and hasattr(api_client, 'session'):
+                api_client.session.close()
+                logger.info("API client session closed successfully.")
+        except Exception as cleanup_e:
+            logger.warning(f"Error closing API client session: {cleanup_e}")
+        
         if error_occurred is None:
             execution_logger.info("SUCCESS - Override pull completed.")
         # Failure message is logged in the except block

@@ -253,6 +253,119 @@ def generate_pl_daily_for_property(property_key, start_date, end_date):
     
     return all_records
 
+def generate_pl_daily_for_property_batched(property_key, start_date, end_date):
+    """Generate pl_daily data for onera property using batch processing to avoid rate limits."""
+    
+    # Load property config
+    with open('config/properties.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    
+    property_config = config['properties'].get(property_key, {})
+    if not property_config:
+        print(f"❌ Property {property_key} not found in config")
+        return None
+    
+    pms = property_config.get('pms', 'cloudbeds')
+    listings = property_config.get('listings', [])
+    property_name = property_config.get('name', property_key)
+    
+    print(f"🔍 Generating pl_daily data for {property_name} ({property_key}) - BATCH MODE")
+    print(f"📅 Date range: {start_date} to {end_date}")
+    print(f"🏢 PMS: {pms}")
+    print(f"🏠 Listings: {len(listings)} (processing in 4 batches of 6)")
+    print("=" * 60)
+    
+    property_start = time.time()
+    
+    # Get all reservations (will be filtered by listing ID later)
+    t0 = time.time()
+    all_reservations = fetch_all_reservations(pms, start_date, end_date)
+    reservations_time = time.time() - t0
+    print(f"📊 Found {len(all_reservations)} total reservations from {pms} (fetched in {reservations_time:.2f}s)\n")
+    
+    # Split listings into 4 batches of 6 each
+    batch_size = 6
+    batches = [listings[i:i + batch_size] for i in range(0, len(listings), batch_size)]
+    
+    all_records = []
+    failed_batches = []
+    
+    # Process each batch
+    for batch_num, batch_listings in enumerate(batches, 1):
+        print(f"📦 Batch {batch_num}/4: Processing listings {((batch_num-1)*batch_size)+1}-{min(batch_num*batch_size, len(listings))}...")
+        batch_start = time.time()
+        
+        batch_records = []
+        batch_failed_listings = []
+        
+        # Process listings in current batch with parallel processing
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # Submit all listing tasks for this batch
+            future_to_listing = {
+                executor.submit(fetch_listing_data, listing, start_date, end_date, all_reservations, pms): listing 
+                for listing in batch_listings
+            }
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_listing):
+                listing = future_to_listing[future]
+                try:
+                    # Add delay between listings to respect rate limits
+                    time.sleep(2.5)
+                    
+                    listing_records = future.result()
+                    batch_records.extend(listing_records)
+                    listing_time = time.time() - batch_start
+                    print(f"  ✅ {listing.get('name', 'Unknown')} processed in {listing_time:.2f}s")
+                except Exception as exc:
+                    print(f"  ❌ {listing.get('name', 'Unknown')} generated an exception: {exc}")
+                    batch_failed_listings.append(listing)
+        
+        # Check if batch was successful
+        if batch_failed_listings:
+            print(f"  ⚠️  Batch {batch_num} had {len(batch_failed_listings)} failures")
+            failed_batches.append((batch_num, batch_failed_listings))
+        else:
+            print(f"  ✅ Batch {batch_num} completed successfully")
+        
+        all_records.extend(batch_records)
+        batch_time = time.time() - batch_start
+        print(f"  📊 Batch {batch_num} processed in {batch_time:.2f}s")
+        
+        # Wait between batches (except for the last one)
+        if batch_num < len(batches):
+            print(f"⏳ Waiting 75s before next batch...")
+            time.sleep(75)
+    
+    # Retry failed batches once
+    if failed_batches:
+        print(f"\n🔄 Retrying {len(failed_batches)} failed batches with longer delays...")
+        for batch_num, failed_listings in failed_batches:
+            print(f"🔄 Retrying Batch {batch_num}...")
+            retry_start = time.time()
+            
+            # Wait longer before retry
+            time.sleep(120)
+            
+            retry_records = []
+            for listing in failed_listings:
+                try:
+                    time.sleep(5)  # Longer delay for retries
+                    listing_records = fetch_listing_data(listing, start_date, end_date, all_reservations, pms)
+                    retry_records.extend(listing_records)
+                    print(f"  ✅ {listing.get('name', 'Unknown')} retry successful")
+                except Exception as exc:
+                    print(f"  ❌ {listing.get('name', 'Unknown')} retry failed: {exc}")
+            
+            all_records.extend(retry_records)
+            retry_time = time.time() - retry_start
+            print(f"  📊 Batch {batch_num} retry completed in {retry_time:.2f}s")
+    
+    property_time = time.time() - property_start
+    print(f"\n✅ Generated {len(all_records)} total pl_daily records (property processed in {property_time:.2f}s)")
+    
+    return all_records
+
 def save_pl_daily_csv(pl_daily_data, property_key, output_dir=None):
     """Save pl_daily data to CSV file in the data directory."""
     if not pl_daily_data:
@@ -285,20 +398,25 @@ def save_pl_daily_csv(pl_daily_data, property_key, output_dir=None):
     
     return filepath
 
-def test_property(property_key, start_date=None, end_date="2027-12-31"):
+def test_property(property_key, start_date=None, end_date=None):
     """Test pl_daily generation for a specific property."""
-    # If no start_date provided, use one month before today
-    if start_date is None:
-        from datetime import datetime, timedelta
-        today = datetime.now()
-        start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+    from utils.date_manager import get_bulk_processing_range
+    
+    # If no dates provided, use centralized bulk processing range
+    if start_date is None or end_date is None:
+        start_date_obj, end_date_obj = get_bulk_processing_range()
+        start_date = start_date_obj.strftime("%Y-%m-%d")
+        end_date = end_date_obj.strftime("%Y-%m-%d")
     
     print(f"🧪 Testing pl_daily generation for {property_key}")
     print(f"📅 Date range: {start_date} to {end_date}")
     print("=" * 60)
     
-    # Generate pl_daily data
-    pl_daily_data = generate_pl_daily_for_property(property_key, start_date, end_date)
+    # Generate pl_daily data - use batch processing for onera property
+    if property_key == 'onera':
+        pl_daily_data = generate_pl_daily_for_property_batched(property_key, start_date, end_date)
+    else:
+        pl_daily_data = generate_pl_daily_for_property(property_key, start_date, end_date)
     
     if pl_daily_data:
         # Save to CSV
@@ -317,9 +435,9 @@ def test_property(property_key, start_date=None, end_date="2027-12-31"):
 if __name__ == "__main__":
     import sys
     
-    # Default date range - start_date will be dynamic (one month before today)
-    default_start_date = None  # Will be set to one month before today
-    default_end_date = "2027-12-31"
+    # Default date range - will use centralized bulk processing range
+    default_start_date = None
+    default_end_date = None
     
     # Check if property key is provided as command line argument
     if len(sys.argv) > 1:
@@ -334,15 +452,16 @@ if __name__ == "__main__":
             print("=" * 60)
             test_property(property_key, start_date, end_date)
         else:
-            # Calculate dynamic start date (one month before today)
-            from datetime import datetime, timedelta
-            today = datetime.now()
-            dynamic_start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+            # Use centralized bulk processing range
+            from utils.date_manager import get_bulk_processing_range
+            start_date_obj, end_date_obj = get_bulk_processing_range()
+            dynamic_start_date = start_date_obj.strftime("%Y-%m-%d")
+            dynamic_end_date = end_date_obj.strftime("%Y-%m-%d")
             
             print(f"🧪 Testing pl_daily generation for {property_key}")
-            print(f"📅 Date range: {dynamic_start_date} to {default_end_date}")
+            print(f"📅 Date range: {dynamic_start_date} to {dynamic_end_date}")
             print("=" * 60)
-            test_property(property_key, dynamic_start_date, default_end_date)
+            test_property(property_key, dynamic_start_date, dynamic_end_date)
     else:
         # Test with all properties for the full range if no argument provided
         import yaml
@@ -350,15 +469,16 @@ if __name__ == "__main__":
             config = yaml.safe_load(f)
         all_properties = list(config['properties'].keys())
         
-        # Calculate dynamic start date (one month before today)
-        from datetime import datetime, timedelta
-        today = datetime.now()
-        dynamic_start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+        # Use centralized bulk processing range
+        from utils.date_manager import get_bulk_processing_range
+        start_date_obj, end_date_obj = get_bulk_processing_range()
+        dynamic_start_date = start_date_obj.strftime("%Y-%m-%d")
+        dynamic_end_date = end_date_obj.strftime("%Y-%m-%d")
         
         for property_key in all_properties:
             print(f"\n{'='*80}")
             print(f"🧪 Testing pl_daily generation for {property_key}")
-            print(f"📅 Date range: {dynamic_start_date} to {default_end_date}")
+            print(f"📅 Date range: {dynamic_start_date} to {dynamic_end_date}")
             print("=" * 60)
-            test_property(property_key, dynamic_start_date, default_end_date)
+            test_property(property_key, dynamic_start_date, dynamic_end_date)
             print(f"{'='*80}\n") 

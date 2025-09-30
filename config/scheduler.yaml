@@ -1,8 +1,8 @@
 scheduler:
   data_range:
-    end_date: '2026-12-31'
-    start_date: '2025-01-01'
-  enabled: false
+    end_date: managed_by_centralized_config
+    start_date: managed_by_centralized_config
+  enabled: true
   max_data_age_hours: 24
   max_retries: 3
   properties: all
@@ -13,7 +13,7 @@ scheduler:
     max_api_calls_per_minute: 60
   refresh_times:
   - 01:00
-  - '13:00'
+  - '13:22'
   retry_delay_minutes: 1
   smart_refresh: true
   timezone: Europe/Lisbon

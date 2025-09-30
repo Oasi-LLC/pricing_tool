@@ -6,6 +6,7 @@ import json
 import yaml
 from pathlib import Path
 from ..api_client import PriceLabsAPI, PriceLabsAPIError
+from ..logging_setup import setup_logging, log_price_update, log_error
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -45,6 +46,33 @@ def get_pms_for_listing(listing_id: str) -> str:
     except Exception as e:
         logger.error(f"Error reading PMS configuration: {str(e)}")
         return 'cloudbeds'
+
+def get_listing_name(listing_id: str) -> str:
+    """
+    Get the listing name for a specific listing ID from the properties configuration.
+
+    Args:
+        listing_id: The PriceLabs listing ID
+
+    Returns:
+        str: Listing name (defaults to listing_id if not found)
+    """
+    try:
+        config_path = Path(__file__).parent.parent.parent / 'config' / 'properties.yaml'
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        # Search through all properties for the listing
+        for property_data in config['properties'].values():
+            for listing in property_data.get('listings', []):
+                if listing['id'] == listing_id:
+                    return listing.get('name', listing_id)
+        
+        logger.warning(f"Listing {listing_id} not found in configuration, using ID as name")
+        return listing_id
+    except Exception as e:
+        logger.error(f"Error reading listing name: {str(e)}")
+        return listing_id
 
 def push_rates_to_pricelabs(
     listing_id: str,
@@ -90,11 +118,9 @@ def push_rates_to_pricelabs(
                 "date": rate["date"],
                 "price": str(int(float(rate["price"]))),  # Convert to integer string
                 "price_type": "fixed",
-                "currency": rate.get("currency", "USD")
+                "currency": rate.get("currency", "USD"),
+                "min_stay": int(rate.get("min_stay", 1))  # Default to 1 if not specified
             }
-            # Add min_stay if it exists in the rate data
-            if "min_stay" in rate:
-                override["min_stay"] = int(rate["min_stay"])
             formatted_overrides.append(override)
 
         if not formatted_overrides:
@@ -115,6 +141,29 @@ def push_rates_to_pricelabs(
         )
         
         logger.info(f"Successfully pushed rates for listing {listing_id}")
+        
+        # Log price updates to file
+        try:
+            price_logger, error_logger = setup_logging()
+            listing_name = get_listing_name(listing_id)
+            
+            for override in formatted_overrides:
+                log_price_update(
+                    logger=price_logger,
+                    listing_id=listing_id,
+                    listing_name=listing_name,
+                    pms_name=pms,
+                    start_date=override['date'],
+                    end_date=override['date'],
+                    price=float(override['price']),
+                    currency=override.get('currency', 'USD'),
+                    price_type=override.get('price_type', 'fixed'),
+                    minimum_stay=override.get('min_stay', 1),
+                    reason="Rate Push to PriceLabs"
+                )
+        except Exception as log_error:
+            logger.warning(f"Failed to log price update: {str(log_error)}")
+        
         return {
             "success": True,
             "message": f"Successfully pushed {len(formatted_overrides)} rates",
@@ -125,6 +174,23 @@ def push_rates_to_pricelabs(
     except PriceLabsAPIError as e:
         error_msg = f"PriceLabs API error for listing {listing_id}: {str(e)}"
         logger.error(error_msg)
+        
+        # Log error to error log file
+        try:
+            price_logger, error_logger = setup_logging()
+            listing_name = get_listing_name(listing_id)
+            log_error(
+                logger=error_logger,
+                listing_id=listing_id,
+                listing_name=listing_name,
+                pms_name=pms,
+                error_type="PriceLabs API Error",
+                error_message=str(e),
+                context=f"Rate push failed for {len(rates)} rates"
+            )
+        except Exception as log_exception:
+            logger.warning(f"Failed to log error: {str(log_exception)}")
+        
         return {
             "success": False,
             "message": "API error occurred",
@@ -135,6 +201,23 @@ def push_rates_to_pricelabs(
     except Exception as e:
         error_msg = f"Unexpected error pushing rates for listing {listing_id}: {str(e)}"
         logger.error(error_msg)
+        
+        # Log error to error log file
+        try:
+            price_logger, error_logger = setup_logging()
+            listing_name = get_listing_name(listing_id)
+            log_error(
+                logger=error_logger,
+                listing_id=listing_id,
+                listing_name=listing_name,
+                pms_name=pms,
+                error_type="Unexpected Error",
+                error_message=str(e),
+                context=f"Rate push failed for {len(rates)} rates"
+            )
+        except Exception as log_exception:
+            logger.warning(f"Failed to log error: {str(log_exception)}")
+        
         return {
             "success": False,
             "message": "Unexpected error occurred",

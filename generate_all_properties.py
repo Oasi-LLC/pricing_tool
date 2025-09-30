@@ -17,13 +17,15 @@ def get_all_properties_from_config():
     
     return list(config['properties'].keys())
 
-def process_all_properties(start_date=None, end_date="2027-12-31"):
-    # If no start_date provided, use one month before today
-    if start_date is None:
-        from datetime import datetime, timedelta
-        today = datetime.now()
-        start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+def process_all_properties(start_date=None, end_date=None):
     """Process all properties defined in the config file."""
+    from utils.date_manager import get_bulk_processing_range
+    
+    # If no dates provided, use centralized bulk processing range
+    if start_date is None or end_date is None:
+        start_date_obj, end_date_obj = get_bulk_processing_range()
+        start_date = start_date_obj.strftime("%Y-%m-%d")
+        end_date = end_date_obj.strftime("%Y-%m-%d")
     
     # Get all property keys
     property_keys = get_all_properties_from_config()
@@ -153,9 +155,9 @@ if __name__ == "__main__":
         start_date = sys.argv[1]
         end_date = sys.argv[2]
     else:
-        # Default date range - start_date will be dynamic (one month before today)
-        start_date = None  # Will be set to one month before today
-        end_date = "2027-12-31"
+        # Default date range - will use centralized bulk processing range
+        start_date = None
+        end_date = None
     
     print(f"🎯 Generating pl_daily data for ALL properties")
     print(f"📅 Date range: {start_date} to {end_date}")

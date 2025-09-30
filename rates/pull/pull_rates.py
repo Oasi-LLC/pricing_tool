@@ -93,7 +93,7 @@ def setup_api_client_local() -> PriceLabsAPI:
 
 @click.command()
 @click.option('--listing-id', '-l', 'listing_ids_input', multiple=True, help='PriceLabs Listing ID(s) to fetch rates for. Can specify multiple times. Requires --pms OR --property.')
-@click.option('--property', '-p', 'property_name', help='Property name (e.g., fb1, wb1) defined in config/properties.yaml. Fetches all listings for this property unless --listing-id is also specified.')
+@click.option('--property', '-p', 'property_name', help='Property name (e.g., onera, wb1) defined in config/properties.yaml. Fetches all listings for this property unless --listing-id is also specified.')
 @click.option('--pms', help='Specify PMS directly. Overrides PMS from property config if --property is also used.')
 @click.option('--start-date', '-s', required=True, callback=validate_date, help='Start date for fetching rates (YYYY-MM-DD).')
 @click.option('--end-date', '-e', required=True, callback=validate_date, help='End date for fetching rates (YYYY-MM-DD).')

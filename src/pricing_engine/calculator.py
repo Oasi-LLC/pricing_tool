@@ -8,7 +8,30 @@ import numpy as np
 # Assuming utils.py is in the same directory or Python path is set correctly
 from . import utils # Use relative import within the package
 
+# Import logging functions
+try:
+    from rates.logging_setup import setup_logging, log_price_update
+except ImportError:
+    # Fallback if rates module is not available
+    def setup_logging():
+        return None, None
+    def log_price_update(*args, **kwargs):
+        pass
+
 # Rule engine import removed - will be added when ready for integration
+
+def _get_listing_info(listing_id: str, property_config: dict) -> tuple:
+    """Get listing name and PMS for a given listing ID"""
+    try:
+        # Search through all properties for the listing
+        for property_data in property_config.values() if isinstance(property_config, dict) else [property_config]:
+            for listing in property_data.get('listings', []):
+                if listing['id'] == listing_id:
+                    return listing.get('name', 'Unknown'), property_data.get('pms', 'unknown')
+        
+        return "Unknown", "unknown"
+    except Exception:
+        return "Unknown", "unknown"
 
 def _get_rate_group_for_listing_id(listing_id: str, property_config: dict) -> Optional[str]:
     """
@@ -324,8 +347,29 @@ def apply_adjustment_rules(
                         today=today
                     )
 
-                    # If adjustment succeeded, return rate AND the determined tier
+                    # If adjustment succeeded, log the rule application and return rate AND the determined tier
                     if adjusted_rate is not None:
+                        # Log the rule-based adjustment
+                        try:
+                            price_logger, error_logger = setup_logging()
+                            if price_logger:
+                                listing_name, pms = _get_listing_info(listing_id, property_config)
+                                log_price_update(
+                                    logger=price_logger,
+                                    listing_id=listing_id,
+                                    listing_name=listing_name,
+                                    pms_name=pms,
+                                    start_date=utils.format_date(current_date),
+                                    end_date=utils.format_date(current_date),
+                                    price=float(adjusted_rate),
+                                    currency='USD',
+                                    price_type='fixed',
+                                    minimum_stay=1,
+                                    reason=f"Rule: {rule.get('name', 'Unnamed Rule')}"
+                                )
+                        except Exception as log_error:
+                            print(f"Warning: Failed to log rule adjustment: {str(log_error)}")
+                        
                         return adjusted_rate, calculated_tier
                     # If adjustment failed, we might still have a tier from lookup, but rate is None
                     # We implicitly continue to the next rule or fall through

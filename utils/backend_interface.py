@@ -7,6 +7,7 @@ import traceback
 import uuid # For generating unique IDs
 from typing import Optional, Dict # Import Dict
 import logging # <-- Add logging import
+from rates.logging_setup import setup_logging, log_price_update
 
 # --- Import necessary functions from the pricing engine --- 
 # Assuming PYTHONPATH is set correctly or the structure allows these imports
@@ -143,9 +144,8 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
             logging.info(f"--- Data loaded for {prop_name}. Calculating rates... ---") # <-- Log info
 
             # Use full date range for calculations but only return user's selected range
-            # Extended to 2027 for future planning
-            full_start_date = datetime.date(2025, 1, 1)
-            full_end_date = datetime.date(2027, 12, 31)  # Extended to 2027 for future planning
+            from utils.date_manager import get_full_calculation_range
+            full_start_date, full_end_date = get_full_calculation_range()
             full_date_range = pd.date_range(full_start_date, full_end_date, freq='D')
             
             # User's selected date range for display
@@ -160,6 +160,30 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                 pl_df['Date_clean'] = pl_df['Date'].str.split('T').str[0]
             except Exception as e:
                 logging.error(f"Error loading pl_daily data for {prop_name}: {e}")
+            
+            # Load live rates data (including min_stay)
+            live_rates_map = {}
+            live_rates_filename = f"{prop_name}_nightly_pulled_overrides.csv"
+            live_rates_path = Path("data") / prop_name / live_rates_filename
+            if live_rates_path.exists():
+                try:
+                    live_rates_df = pd.read_csv(
+                        live_rates_path,
+                        usecols=['listing_id', 'date', 'price', 'min_stay'],
+                        dtype={'listing_id': str, 'date': str, 'price': float, 'min_stay': 'Int64'}
+                    )
+                    # Create mapping key: listing_id_date -> (price, min_stay)
+                    for _, row in live_rates_df.iterrows():
+                        map_key = f"{row['listing_id']}_{row['date']}"
+                        live_rates_map[map_key] = {
+                            'price': row['price'],
+                            'min_stay': row['min_stay'] if pd.notna(row['min_stay']) else 1
+                        }
+                    logging.info(f"Loaded {len(live_rates_map)} live rates from {live_rates_path}")
+                except Exception as e:
+                    logging.warning(f"Error loading live rates from {live_rates_path}: {e}")
+            else:
+                logging.warning(f"Live rates file not found: {live_rates_path}")
             
             # Process all dates for accurate occupancy calculations
             for current_date in full_date_range:
@@ -300,6 +324,12 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                     # Find listing name from config (Corrected lookup for list of dicts)
                     listing_name = next((item.get('name', listing_id) for item in prop_config.get('listings', []) if str(item.get('id')) == listing_id), listing_id) # Fallback to ID
 
+                    # Get live rates data for this listing and date
+                    live_rate_key = f"{listing_id}_{current_date_str}"
+                    live_rate_data = live_rates_map.get(live_rate_key, {})
+                    live_rate = live_rate_data.get('price', 0.0)
+                    min_stay = live_rate_data.get('min_stay', 1)  # Default to 1 if not found
+
                     # TODO: Implement actual logic for Baseline, Occ% Hist, Pace, Flagging
                     # These might require more historical data loading or comparison logic
 
@@ -316,6 +346,8 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                         'Occ% (Hist)': occ_hist,
                         'Pace': pace,
                         'Editable Price': suggested_rate if suggested_rate is not None else 0.0, # Default editable to suggested
+                        'Live Rate $': live_rate,  # Add live rate from overrides
+                        'Min Stay': min_stay,  # Add minimum stay from overrides
                         'Status': 'Needs Review',
                         # Include raw data for potential detail view needs?
                         'property': prop_name,
@@ -365,20 +397,168 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
     return results_df
 
 
+def get_listing_info(listing_id: str) -> tuple:
+    """Get listing name and PMS for a given listing ID"""
+    try:
+        properties_config = load_properties_config()
+        if not properties_config:
+            return "Unknown", "unknown"
+            
+        # Search through all properties for the listing
+        for property_data in properties_config.values():
+            for listing in property_data.get('listings', []):
+                if listing['id'] == listing_id:
+                    return listing.get('name', 'Unknown'), property_data.get('pms', 'unknown')
+        
+        return "Unknown", "unknown"
+    except Exception:
+        return "Unknown", "unknown"
+
+def get_batna_for_listing(listing_id: str) -> Optional[float]:
+    """Get BATNA value for a specific listing ID"""
+    try:
+        properties_config = load_properties_config()
+        if not properties_config:
+            return None
+            
+        # Search through all properties for the listing
+        for property_data in properties_config.values():
+            for listing in property_data.get('listings', []):
+                if listing['id'] == listing_id:
+                    return listing.get('batna')
+        
+        return None
+    except Exception:
+        return None
+
+def get_listing_batna_info(listing_id: str) -> tuple:
+    """Get listing name, PMS, and BATNA value for a given listing ID"""
+    try:
+        properties_config = load_properties_config()
+        if not properties_config:
+            return "Unknown", "unknown", None
+            
+        # Search through all properties for the listing
+        for property_data in properties_config.values():
+            for listing in property_data.get('listings', []):
+                if listing['id'] == listing_id:
+                    return (
+                        listing.get('name', 'Unknown'), 
+                        property_data.get('pms', 'unknown'),
+                        listing.get('batna')
+                    )
+        
+        return "Unknown", "unknown", None
+    except Exception:
+        return "Unknown", "unknown", None
+
+def apply_batna_to_selection(selected_rows, batna_type: str, amount: float = 0) -> list:
+    """Apply BATNA logic to selected rows
+    
+    Args:
+        selected_rows: List of selected data rows (from Streamlit session state)
+        batna_type: "batna" or "batna_plus"
+        amount: Amount to add to BATNA (for batna_plus)
+    
+    Returns:
+        List of updates to apply
+    """
+    updates = []
+    
+    try:
+        for row in selected_rows:
+            listing_id = row.get('listing_id')
+            if not listing_id:
+                continue
+                
+            # Get BATNA value for this listing
+            batna_value = get_batna_for_listing(listing_id)
+            if batna_value is None:
+                st.warning(f"No BATNA value found for listing {listing_id}")
+                continue
+            
+            # Calculate new rate based on BATNA type
+            if batna_type == "batna":
+                new_rate = batna_value
+                reason = "BATNA Rate Applied"
+            elif batna_type == "batna_plus":
+                new_rate = batna_value + amount
+                reason = f"BATNA + ${amount:.2f} Applied"
+            else:
+                st.error(f"Invalid BATNA type: {batna_type}")
+                continue
+            
+            # Create update entry
+            update = {
+                '_id': row.get('_id'),
+                'listing_id': listing_id,
+                'Date': row.get('Date'),
+                'Editable Price': new_rate,
+                'Status': 'Needs Review',
+                'batna_applied': True,
+                'batna_type': batna_type,
+                'batna_value': batna_value,
+                'amount_added': amount if batna_type == "batna_plus" else 0,
+                'reason': reason
+            }
+            updates.append(update)
+            
+    except Exception as e:
+        st.error(f"Error applying BATNA to selection: {e}")
+        traceback.print_exc()
+    
+    return updates
+
 def update_rates(updates: list):
-    """Logs rate updates (adjustments/approvals). For MVP, writes to a log file."""
+    """Logs rate updates (adjustments/approvals). Enhanced with proper logging system."""
     log_file = OUTPUT_DIR / "updates_log.csv"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_entries = []
 
+    # Setup logging for price updates
+    try:
+        price_logger, error_logger = setup_logging()
+    except Exception as e:
+        st.error(f"Failed to setup logging: {e}")
+        price_logger, error_logger = None, None
+
     for update in updates:
+        # Get listing information
+        listing_id = update.get('_id', update.get('listing_id'))
+        listing_name, pms = get_listing_info(listing_id)
+        
+        # Create legacy log entry for backward compatibility
         log_entry = {
             'timestamp': now,
-            'rate_id': update.get('_id', update.get('listing_id')),  # Try _id first, then listing_id as fallback
+            'rate_id': listing_id,
             'new_price': update.get('Editable Price'),
-            'new_status': update.get('Status', 'Updated')  # Default to 'Updated' if no status provided
+            'new_status': update.get('Status', 'Updated')
         }
         log_entries.append(log_entry)
+        
+        # Log to proper pricing update log
+        if price_logger and listing_id:
+            try:
+                # Extract date from update if available
+                date_str = update.get('Date', '')
+                if not date_str:
+                    date_str = datetime.datetime.now().strftime('%Y-%m-%d')
+                
+                log_price_update(
+                    logger=price_logger,
+                    listing_id=listing_id,
+                    listing_name=listing_name,
+                    pms_name=pms,
+                    start_date=date_str,
+                    end_date=date_str,
+                    price=float(update.get('Editable Price', 0)),
+                    currency='USD',
+                    price_type='fixed',
+                    minimum_stay=1,
+                    reason="Manual Frontend Adjustment"
+                )
+            except Exception as log_error:
+                st.warning(f"Failed to log price update for {listing_id}: {str(log_error)}")
 
     try:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

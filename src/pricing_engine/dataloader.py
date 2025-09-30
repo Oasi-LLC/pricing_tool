@@ -36,7 +36,7 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     Loads and preprocesses all necessary data for a given property.
 
     Args:
-        property_name: The identifier of the property (e.g., 'fb1'),
+        property_name: The identifier of the property (e.g., 'onera'),
                        corresponding to the data subdirectory name.
         property_config: The configuration dictionary for this specific property
                          loaded from properties.yaml.
@@ -124,11 +124,11 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
     dates_tiers_path = base_path / f"dates_tiers_{property_name}.csv"
     date_tier_map: Dict[str, str] = {}
     try:
-        # UPDATED: Hardcode for fb1 comma separator and column names
+        # UPDATED: Hardcode for onera comma separator and column names
         dates_tiers_df = pd.read_csv(
             dates_tiers_path,
-            sep=',',              # fb1 uses comma
-            usecols=['Date', 'Tier'], # Use column names matching fb1
+            sep=',',              # onera uses comma
+            usecols=['Date', 'Tier'], # Use column names matching onera
             parse_dates=['Date'],   # Parse the 'Date' column
             header=0             # Assumes first row IS a header
         )
@@ -209,8 +209,11 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
                 # Store in occupancy map
                 occupancy_map[date_str] = occupancy_pct
                 
-                # Debug logging for specific dates
-                if date_str in ['2025-07-09', '2025-07-10', '2025-07-11']:
+                # Debug logging for current operational date range
+                from utils.date_manager import get_operational_range
+                start_date, end_date = get_operational_range()
+                current_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+                if start_date <= current_date <= end_date:
                     print(f"DEBUG: Date {date_str} - Total units: {total_units_for_property}, Vacant: {vacant_units}, Occupied: {occupied_units}, Occupancy: {occupancy_pct:.2f}%")
                 
             print(f"Calculated occupancy from vacant units for {len(occupancy_map)} dates.")

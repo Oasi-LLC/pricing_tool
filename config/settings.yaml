@@ -1,6 +1,8 @@
 # Default date range for the pricing run
 # Use YYYY-MM-DD format
-start_date: "2025-05-20"  # <<< Set your desired start date
-end_date: "2025-07-28"    # <<< Set your desired end date
+# Note: These are now managed centrally in config/date_ranges.yaml
+# This file is kept for backward compatibility
+start_date: "2025-05-20"  # <<< Managed by date_ranges.yaml
+end_date: "2025-07-28"    # <<< Managed by date_ranges.yaml
 # Base directory for output files
 output_directory: "output/"

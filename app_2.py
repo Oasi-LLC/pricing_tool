@@ -858,8 +858,8 @@ def update_selected_ids(new_ids, all_visible_ids):
 def load_and_prepare_data(property_selection, start_date, end_date):
     """Load and prepare data with proper initialization before caching"""
     # Always request full range from backend for accurate occupancy calculations
-    full_start_date = datetime.date(2025, 1, 1)
-    full_end_date = datetime.date(2027, 12, 31)  # Extended to 2027 for future planning
+    from utils.date_manager import get_full_calculation_range
+    full_start_date, full_end_date = get_full_calculation_range()
     print(f"[DEBUG] Calling backend with full_start_date={full_start_date}, full_end_date={full_end_date}")
     # Load initial data with full 2-year range
     generated_df = backend_interface.trigger_rate_generation(
@@ -892,15 +892,19 @@ def load_and_prepare_data(property_selection, start_date, end_date):
         print(f"[DEBUG] Unique Occ% (Curr) values: {filtered_df['Occ% (Curr)'].unique()}")
         generated_df = filtered_df
         
-        # Process live rates
-        all_live_rates_dfs = []
-        for prop_name in property_selection:
-            live_df = process_live_rates(prop_name)
-            if live_df is not None:
-                all_live_rates_dfs.append(live_df)
+        # Check if backend already provides live rates data
+        backend_has_live_rates = COL_LIVE_RATE in generated_df.columns and COL_MIN_STAY in generated_df.columns
         
-        # Merge live rates
-        if all_live_rates_dfs:
+        # Process live rates only if backend doesn't provide them
+        all_live_rates_dfs = []
+        if not backend_has_live_rates:
+            for prop_name in property_selection:
+                live_df = process_live_rates(prop_name)
+                if live_df is not None:
+                    all_live_rates_dfs.append(live_df)
+        
+        # Merge live rates only if we have them and backend doesn't provide them
+        if all_live_rates_dfs and not backend_has_live_rates:
             combined_live_rates_df = pd.concat(all_live_rates_dfs, ignore_index=True)
             if not pd.api.types.is_string_dtype(generated_df[COL_DATE]):
                 generated_df[COL_DATE] = pd.to_datetime(generated_df[COL_DATE]).dt.strftime('%Y-%m-%d')
@@ -915,6 +919,7 @@ def load_and_prepare_data(property_selection, start_date, end_date):
             )
             
             # Ensure proper column names
+            # Backend now provides 'Live Rate $' and 'Min Stay' directly, but handle legacy format too
             if 'price' in merged_df.columns:
                 merged_df.rename(columns={'price': COL_LIVE_RATE}, inplace=True)
             if COL_LIVE_RATE not in merged_df.columns:
@@ -926,9 +931,12 @@ def load_and_prepare_data(property_selection, start_date, end_date):
             if COL_MIN_STAY not in merged_df.columns:
                 merged_df[COL_MIN_STAY] = 1  # Default minimum stay of 1
         else:
+            # Backend provides live rates data or no live rates files found
             merged_df = generated_df.copy()
-            merged_df[COL_LIVE_RATE] = 0.0
-            merged_df[COL_MIN_STAY] = 1  # Default minimum stay of 1
+            if COL_LIVE_RATE not in merged_df.columns:
+                merged_df[COL_LIVE_RATE] = 0.0
+            if COL_MIN_STAY not in merged_df.columns:
+                merged_df[COL_MIN_STAY] = 1  # Default minimum stay of 1
         
         # Initialize editable price based on current toggle state
         toggle_value = st.session_state.get('rate_source_toggle', 'Use Live Rate')
@@ -945,9 +953,8 @@ def load_and_prepare_data(property_selection, start_date, end_date):
     
     return None
 
-@st.cache_data
 def process_live_rates(property_name):
-    """Cache live rates loading per property"""
+    """Load live rates for a property (no caching to ensure fresh data)"""
     live_rates_filename = f"{property_name}_nightly_pulled_overrides.csv"
     live_rates_path = Path("data") / property_name / live_rates_filename
     if live_rates_path.exists():
@@ -1114,25 +1121,30 @@ with config_area:
     
     # Single combined button
     st.markdown("**🔄 Refresh All Data**")
-    st.markdown("*Updates both pricing and property data in one operation*")
+    st.markdown("*Downloads fresh pricing data for all properties, then updates property data for selected properties*")
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🔄 Refresh All Data", key='refresh_all_data_button', 
-                    help="Download latest pricing data and update property data for selected properties",
+                    help="Downloads fresh pricing data for all properties, then updates property data for selected properties",
                     type="primary"):
             if not current_selected_properties:
                 st.warning("⚠️ Please select at least one property first.")
             else:
                 st.session_state.refresh_all_data_clicked = True
-                st.session_state.refresh_status = f"Starting comprehensive data refresh for {len(current_selected_properties)} properties..."
+                st.session_state.refresh_status = f"Starting data refresh: pricing for all properties, property data for {len(current_selected_properties)} selected properties..."
                 rerun()
     
     # Show what data will be updated
     st.markdown("**📋 Data that will be updated:**")
-    st.markdown("• **📈 Current Pricing:** Latest rate overrides and changes from PriceLabs")
-    st.markdown("• **📊 Property Data:** Daily occupancy, booking patterns, and availability")
-    st.caption("📅 Data range: 2025-01-01 to 2026-12-31")
+    st.markdown("• **📈 Current Pricing:** Latest rate overrides and changes from PriceLabs (ALL properties)")
+    st.markdown("• **📊 Property Data:** Daily occupancy, booking patterns, and availability (selected properties only)")
+    # Display current date ranges from centralized config
+    from utils.date_manager import get_nightly_pull_range, get_bulk_processing_range
+    pricing_start, pricing_end = get_nightly_pull_range()
+    property_start, property_end = get_bulk_processing_range()
+    st.caption(f"📅 Pricing data range: {pricing_start.strftime('%Y-%m-%d')} to {pricing_end.strftime('%Y-%m-%d')}")
+    st.caption(f"📅 Property data range: {property_start.strftime('%Y-%m-%d')} to {property_end.strftime('%Y-%m-%d')}")
     
     # Show refresh status if any refresh operation is in progress
     if st.session_state.refresh_nightly_clicked or st.session_state.refresh_property_clicked or st.session_state.refresh_all_data_clicked:
@@ -1143,8 +1155,13 @@ with config_area:
                     import subprocess
                     import sys
                     from datetime import datetime
-                    start_date = "2025-01-01"
-                    end_date = "2026-12-31"
+                    from utils.date_manager import get_nightly_pull_range
+                    
+                    # Use centralized date management
+                    start_date_obj, end_date_obj = get_nightly_pull_range()
+                    start_date = start_date_obj.strftime('%Y-%m-%d')
+                    end_date = end_date_obj.strftime('%Y-%m-%d')
+                    
                     result = subprocess.run([
                         sys.executable, "rates/pull/nightly_pull.py", start_date, end_date
                     ], 
@@ -1152,7 +1169,7 @@ with config_area:
                     if result.returncode == 0:
                         st.success("✅ **Current pricing data downloaded successfully!**")
                         st.info("📈 Updated: Current pricing overrides and rate changes from PriceLabs")
-                        st.info("📅 Pricing data range: 2025-01-01 to 2026-12-31")
+                        st.info(f"📅 Pricing data range: {start_date} to {end_date}")
                         st.session_state.refresh_nightly_clicked = False
                         st.session_state.refresh_status = ""
                         st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1192,9 +1209,11 @@ with config_area:
                     for i, property_key in enumerate(current_selected_properties):
                         status_text.text(f"🔄 Updating {property_key}... ({i+1}/{total_count})")
                         
-                        # Generate 2-year data (2025-01-01 to 2026-12-31)
-                        start_date_str = "2025-01-01"
-                        end_date_str = "2026-12-31"
+                        # Use centralized date management for property data
+                        from utils.date_manager import get_bulk_processing_range
+                        bulk_start_obj, bulk_end_obj = get_bulk_processing_range()
+                        start_date_str = bulk_start_obj.strftime('%Y-%m-%d')
+                        end_date_str = bulk_end_obj.strftime('%Y-%m-%d')
                         
                         result = subprocess.run([
                             sys.executable, "generate_pl_daily_comprehensive.py", 
@@ -1216,7 +1235,7 @@ with config_area:
                     if success_count == total_count:
                         st.success(f"✅ **Property data updated successfully!** ({success_count}/{total_count} properties)")
                         st.info("📊 Updated: Daily occupancy, booking patterns, and availability data")
-                        st.info("📅 Data range: 2025-01-01 to 2026-12-31")
+                        st.info(f"📅 Data range: {start_date_str} to {end_date_str}")
                     else:
                         st.warning(f"⚠️ **Partial update completed** - {success_count}/{total_count} properties updated successfully.")
                         st.error(f"❌ Some properties failed to update. Check the error messages above.")
@@ -1239,75 +1258,253 @@ with config_area:
                     rerun()
                 
                 elif st.session_state.refresh_all_data_clicked:
-                    # Combined operation: Get current pricing + Update property data for SELECTED properties only
+                    # Simplified refresh: Always run nightly pull + property data generation
                     import subprocess
                     import sys
                     from datetime import datetime, timedelta
+                    import os
+                    import time
                     
-                    st.info("🔄 **Step 1/2:** Downloading current pricing data...")
+                    st.info("🔄 **Refresh All Data:** Starting comprehensive data refresh...")
+                    print(f"\n{'='*80}")
+                    print(f"🔄 REFRESH ALL DATA - STARTING AT {datetime.now()}")
+                    print(f"{'='*80}")
+                    print(f"🏠 Properties selected: {current_selected_properties}")
                     
-                    # Step 1: Get current pricing data (dynamic range: last month to end of year)
-                    today = datetime.now()
-                    start_date = (today.replace(day=1) - timedelta(days=1)).replace(day=1).strftime('%Y-%m-%d')
-                    end_date = today.replace(month=12, day=31).strftime('%Y-%m-%d')
+                    # Step 1: Always download current pricing data for ALL properties
+                    st.info("🔄 **Step 1/3:** Downloading current pricing data for all properties...")
+                    print("🔄 REFRESH ALL DATA: Step 1/3 - Downloading current pricing data for all properties...")
                     
+                    # Get current pricing data using centralized date management
+                    from utils.date_manager import get_nightly_pull_range
+                    start_date_obj, end_date_obj = get_nightly_pull_range()
+                    start_date = start_date_obj.strftime('%Y-%m-%d')
+                    end_date = end_date_obj.strftime('%Y-%m-%d')
+                    
+                    st.info(f"📅 **Date range for pricing data:** {start_date} to {end_date}")
+                    print(f"📅 REFRESH ALL DATA: Date range for pricing data: {start_date} to {end_date}")
+                    
+                    st.info("🔄 **Running nightly_pull.py script...**")
+                    print("🔄 REFRESH ALL DATA: Running nightly_pull.py script...")
                     result = subprocess.run([
                         sys.executable, "rates/pull/nightly_pull.py", start_date, end_date
                     ], capture_output=True, text=True, cwd=".")
                     
+                    st.info(f"📊 **nightly_pull.py exit code:** {result.returncode}")
+                    print(f"📊 REFRESH ALL DATA: nightly_pull.py exit code: {result.returncode}")
+                    
+                    if result.stdout:
+                        st.info(f"📤 **nightly_pull.py output:** {result.stdout[:500]}...")
+                        print(f"📤 REFRESH ALL DATA: nightly_pull.py stdout: {result.stdout[:500]}...")
+                    if result.stderr:
+                        st.info(f"⚠️ **nightly_pull.py errors:** {result.stderr[:500]}...")
+                        print(f"⚠️ REFRESH ALL DATA: nightly_pull.py stderr: {result.stderr[:500]}...")
+                    
                     if result.returncode == 0:
-                        st.success("✅ **Step 1 Complete:** Current pricing data downloaded successfully!")
+                        st.success("✅ **Step 1 Complete:** Current pricing data downloaded successfully for all properties!")
+                        print("✅ REFRESH ALL DATA: Step 1 Complete - Current pricing data downloaded successfully for all properties!")
                     else:
                         st.error(f"❌ **Step 1 Failed:** Error downloading pricing data: {result.stderr}")
+                        print(f"❌ REFRESH ALL DATA: Step 1 Failed - Error downloading pricing data: {result.stderr}")
                         st.session_state.refresh_all_data_clicked = False
                         st.session_state.refresh_status = ""
                         st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         rerun()
                     
-                    # Step 2: Update property data for SELECTED properties only
-                    st.info("🔄 **Step 2/2:** Updating property data for selected properties...")
+                    # Step 2: Wait for API rate limit reset before updating property data
+                    st.info("⏳ **Step 2/3:** Waiting for API rate limit reset (1 minute)...")
+                    st.info("🔄 This prevents rate limiting conflicts between nightly pull and PL daily generation")
+                    print("⏳ REFRESH ALL DATA: Step 2/3 - Waiting for API rate limit reset (1 minute)...")
+                    print("🔄 REFRESH ALL DATA: This prevents rate limiting conflicts between nightly pull and PL daily generation")
+                    
+                    # Wait 1 minute (60 seconds) for API rate limit reset
+                    for remaining in range(60, 0, -15):  # Countdown every 15 seconds
+                        minutes = remaining // 60
+                        seconds = remaining % 60
+                        st.info(f"⏳ **Waiting:** {minutes:02d}:{seconds:02d} remaining...")
+                        print(f"⏳ REFRESH ALL DATA: Waiting: {minutes:02d}:{seconds:02d} remaining...")
+                        time.sleep(15)  # Wait 15 seconds
+                    
+                    st.info("✅ **Rate limit reset complete!** Starting property data update...")
+                    print("✅ REFRESH ALL DATA: Rate limit reset complete! Starting property data update...")
+                    
+                    # Step 3: Update property data for SELECTED properties only using bulk processing range
+                    from utils.date_manager import get_bulk_processing_range
+                    bulk_start_date_obj, bulk_end_date_obj = get_bulk_processing_range()
+                    bulk_start_date = bulk_start_date_obj.strftime('%Y-%m-%d')
+                    bulk_end_date = bulk_end_date_obj.strftime('%Y-%m-%d')
+                    
+                    st.info("🔄 **Step 3/3:** Updating property data for selected properties...")
+                    print("🔄 REFRESH ALL DATA: Step 3/3 - Updating property data for selected properties...")
+                    st.info(f"🏠 **Processing {len(current_selected_properties)} properties:** {current_selected_properties}")
+                    st.info(f"📅 **Property data range:** {bulk_start_date} to {bulk_end_date}")
+                    print(f"🏠 REFRESH ALL DATA: Processing {len(current_selected_properties)} properties: {current_selected_properties}")
+                    print(f"📅 REFRESH ALL DATA: Property data range: {bulk_start_date} to {bulk_end_date}")
                     
                     success_count = 0
                     total_count = len(current_selected_properties)
                     
-                    # Add progress indication
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
+                    # Enhanced progress indication with status text
+                    pl_progress_bar = st.progress(0)
+                    pl_status_text = st.empty()
                     
                     for i, property_key in enumerate(current_selected_properties):
-                        status_text.text(f"🔄 Updating {property_key}... ({i+1}/{total_count})")
+                        # Update progress
+                        progress = (i + 1) / total_count
+                        pl_progress_bar.progress(progress)
+                        pl_status_text.text(f"Generating PL daily data for {property_key} ({i+1}/{total_count})")
                         
-                        # Use dynamic date range for selected property
+                        st.info(f"🔍 **DEBUG:** Starting property {property_key} ({i+1}/{total_count})")
+                        st.info(f"📅 **DEBUG:** Date range for {property_key}: {bulk_start_date} to {bulk_end_date}")
+                        print(f"🔍 SMART REFRESH: Starting property {property_key} ({i+1}/{total_count})")
+                        print(f"📅 SMART REFRESH: Date range for {property_key}: {bulk_start_date} to {bulk_end_date}")
+                        
+                        # Use bulk processing date range for selected property
+                        st.info(f"🚀 **DEBUG:** Running command: python generate_pl_daily_comprehensive.py {property_key} {bulk_start_date} {bulk_end_date}")
+                        print(f"🚀 SMART REFRESH: Running command: python generate_pl_daily_comprehensive.py {property_key} {bulk_start_date} {bulk_end_date}")
+                        
                         result = subprocess.run([
                             sys.executable, "generate_pl_daily_comprehensive.py", 
-                            property_key, start_date, end_date
+                            property_key, bulk_start_date, bulk_end_date
                         ], capture_output=True, text=True, cwd=".")
+                        
+                        st.info(f"📊 **DEBUG:** {property_key} script exit code: {result.returncode}")
+                        print(f"📊 SMART REFRESH: {property_key} script exit code: {result.returncode}")
+                        
+                        if result.stdout:
+                            st.info(f"📤 **DEBUG:** {property_key} stdout: {result.stdout[:1000]}...")
+                            print(f"📤 SMART REFRESH: {property_key} stdout: {result.stdout[:1000]}...")
+                        if result.stderr:
+                            st.info(f"⚠️ **DEBUG:** {property_key} stderr: {result.stderr[:1000]}...")
+                            print(f"⚠️ SMART REFRESH: {property_key} stderr: {result.stderr[:1000]}...")
+                        
+                        # Parse the PL daily script output to extract success/failure details
+                        successful_listings = []
+                        failed_listings = []
+                        total_listings = 0
+                        
+                        if result.stdout:
+                            # Extract listing processing results from the script output
+                            lines = result.stdout.split('\n')
+                            for line in lines:
+                                if "Successfully processed:" in line:
+                                    # Extract count from "✅ Successfully processed: X"
+                                    try:
+                                        count_part = line.split("Successfully processed:")[1].strip()
+                                        successful_count = int(count_part)
+                                    except:
+                                        successful_count = 0
+                                elif "Failed to process:" in line:
+                                    # Extract count from "❌ Failed to process: X"
+                                    try:
+                                        count_part = line.split("Failed to process:")[1].strip()
+                                        failed_count = int(count_part)
+                                    except:
+                                        failed_count = 0
+                                elif "Total listings in config:" in line:
+                                    # Extract total from "🏠 Total listings in config: X"
+                                    try:
+                                        count_part = line.split("Total listings in config:")[1].strip()
+                                        total_listings = int(count_part)
+                                    except:
+                                        total_listings = 0
+                                elif "Successful listings:" in line:
+                                    # Extract successful listing names
+                                    try:
+                                        listings_part = line.split("Successful listings:")[1].strip()
+                                        successful_listings = [name.strip() for name in listings_part.split(',')]
+                                    except:
+                                        successful_listings = []
+                                elif "Failed listings:" in line:
+                                    # Extract failed listing names
+                                    try:
+                                        listings_part = line.split("Failed listings:")[1].strip()
+                                        failed_listings = [name.strip() for name in listings_part.split(',')]
+                                    except:
+                                        failed_listings = []
                         
                         if result.returncode == 0:
                             success_count += 1
+                            
+                            # Show detailed success/failure breakdown
+                            if total_listings > 0:
+                                if failed_listings:
+                                    st.warning(f"⚠️ **Partial Success:** {property_key} completed with {len(successful_listings)}/{total_listings} listings processed")
+                                    st.success(f"✅ **Successful listings:** {', '.join(successful_listings)}")
+                                    st.error(f"❌ **Failed listings:** {', '.join(failed_listings)}")
+                                    st.info("💡 **Next Steps:** Some listings failed. Check API access or try refreshing individual listings.")
+                                else:
+                                    st.success(f"✅ **Complete Success:** {property_key} completed with all {len(successful_listings)}/{total_listings} listings processed")
+                                    st.success(f"✅ **All listings successful:** {', '.join(successful_listings)}")
+                            else:
+                                st.success(f"✅ **DEBUG:** {property_key} completed successfully!")
+                            
+                            print(f"✅ TERMINAL DEBUG: {property_key} completed successfully!")
                         else:
-                            st.error(f"❌ Error updating {property_key}: {result.stderr}")
+                            st.error(f"❌ **DEBUG:** {property_key} failed with exit code {result.returncode}")
+                            print(f"❌ TERMINAL DEBUG: {property_key} failed with exit code {result.returncode}")
                         
-                        # Update progress
-                        progress_bar.progress((i + 1) / total_count)
+                        # Progress is already updated in the loop above
                     
                     # Clear progress indicators
-                    progress_bar.empty()
-                    status_text.empty()
+                    pl_progress_bar.empty()
+                    pl_status_text.empty()
                     
                     if success_count == total_count:
                         st.success(f"✅ **Complete Data Refresh Successful!**")
                         st.info("📈 Updated: Current pricing overrides and rate changes from PriceLabs")
                         st.info("📊 Updated: Daily occupancy, booking patterns, and availability data")
-                        st.info(f"📅 Data range: {start_date} to {end_date}")
+                        st.info(f"📅 Data range: {bulk_start_date} to {bulk_end_date}")
                         st.info(f"🏠 Properties updated: {success_count}/{total_count}")
+                        print(f"✅ TERMINAL DEBUG: Complete Data Refresh Successful! {success_count}/{total_count} properties updated")
+                        
+                        # DEBUG: Show what files were created and their sizes
+                        st.info("🔍 **DEBUG:** Checking created files...")
+                        print("🔍 TERMINAL DEBUG: Checking created files...")
+                        for prop in current_selected_properties:
+                            pl_daily_path = f"data/{prop}/pl_daily_{prop}.csv"
+                            nightly_path = f"data/{prop}/{prop}_nightly_pulled_overrides.csv"
+                            
+                            if os.path.exists(pl_daily_path):
+                                size = os.path.getsize(pl_daily_path)
+                                st.info(f"📁 **DEBUG:** {pl_daily_path} - {size} bytes")
+                                print(f"📁 TERMINAL DEBUG: {pl_daily_path} - {size} bytes")
+                                
+                                # Count lines in the file
+                                try:
+                                    with open(pl_daily_path, 'r') as f:
+                                        line_count = sum(1 for line in f)
+                                    st.info(f"📊 **DEBUG:** {pl_daily_path} - {line_count} lines")
+                                    print(f"📊 TERMINAL DEBUG: {pl_daily_path} - {line_count} lines")
+                                except Exception as e:
+                                    st.info(f"⚠️ **DEBUG:** Could not count lines in {pl_daily_path}: {e}")
+                                    print(f"⚠️ TERMINAL DEBUG: Could not count lines in {pl_daily_path}: {e}")
+                            else:
+                                st.warning(f"❌ **DEBUG:** {pl_daily_path} does not exist!")
+                                print(f"❌ TERMINAL DEBUG: {pl_daily_path} does not exist!")
+                                
+                            if os.path.exists(nightly_path):
+                                size = os.path.getsize(nightly_path)
+                                st.info(f"📁 **DEBUG:** {nightly_path} - {size} bytes")
+                                print(f"📁 TERMINAL DEBUG: {nightly_path} - {size} bytes")
+                            else:
+                                st.warning(f"❌ **DEBUG:** {nightly_path} does not exist!")
+                                print(f"⚠️ TERMINAL DEBUG: {nightly_path} does not exist!")
                     else:
                         st.warning(f"⚠️ **Partial update completed** - {success_count}/{total_count} properties updated successfully.")
                         st.error(f"❌ Some properties failed to update. Check the error messages above.")
+                        print(f"⚠️ SMART REFRESH: Partial update completed - {success_count}/{total_count} properties updated successfully")
+                        print(f"❌ SMART REFRESH: Some properties failed to update. Check the error messages above")
                     
                     st.session_state.refresh_all_data_clicked = False
                     st.session_state.refresh_status = ""
                     st.session_state.last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    print(f"{'='*80}")
+                    print(f"🔄 SMART REFRESH ALL DATA - COMPLETED AT {datetime.now()}")
+                    print(f"✅ Final status: {success_count}/{total_count} properties updated successfully")
+                    print(f"{'='*80}\n")
+                    
                     # Clear cache and reset data state to force reload
                     st.cache_data.clear()
                     st.session_state.data_loaded = False
@@ -1436,17 +1633,103 @@ with config_area:
         
         # Check if it's time to refresh and run if needed
         if enabled and is_time_to_refresh():
-            st.info("🔄 Running scheduled refresh...")
-            success = run_scheduled_refresh()
-            if success:
-                st.success("✅ Refresh completed successfully!")
-                # Clear cache and reset data state
-                st.cache_data.clear()
-                st.session_state.data_loaded = False
-                st.session_state.base_data = None
-                st.session_state.filtered_data = None
-                st.session_state.generated_rates_df = None
-                st.session_state.edited_rates_df = None
+            # Check if refresh is already running by looking at progress tracker
+            try:
+                from utils.progress_tracker import get_scheduler_status
+                progress_status = get_scheduler_status()
+                
+                if progress_status.get("refresh_active", False):
+                    # Show detailed progress information
+                    st.info("🔄 **Scheduled refresh is running...**")
+                    
+                    # Create progress containers
+                    with st.container():
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            # Overall progress
+                            total_progress = progress_status.get("total_progress", 0)
+                            st.progress(total_progress / 100)
+                            st.write(f"**Overall Progress:** {total_progress:.1f}%")
+                            
+                            # Current step
+                            current_step = progress_status.get("current_step", "Unknown")
+                            step_progress = progress_status.get("step_progress", 0)
+                            current_operation = progress_status.get("current_operation", "")
+                            
+                            st.write(f"**Current Step:** {current_step.replace('_', ' ').title()}")
+                            st.write(f"**Step Progress:** {step_progress:.1f}%")
+                            
+                            if current_operation:
+                                st.write(f"**Operation:** {current_operation}")
+                        
+                        with col2:
+                            # Properties progress
+                            properties_total = progress_status.get("properties_total", 0)
+                            properties_completed = progress_status.get("properties_completed", 0)
+                            properties_failed = progress_status.get("properties_failed", 0)
+                            
+                            st.write(f"**Properties:** {properties_completed}/{properties_total} completed")
+                            if properties_failed > 0:
+                                st.write(f"**Failed:** {properties_failed}")
+                            
+                            # API calls progress
+                            api_calls_made = progress_status.get("api_calls_made", 0)
+                            api_calls_total = progress_status.get("api_calls_total", 0)
+                            
+                            if api_calls_total > 0:
+                                st.write(f"**API Calls:** {api_calls_made}/{api_calls_total}")
+                            
+                            # Time information
+                            start_time = progress_status.get("start_time")
+                            estimated_completion = progress_status.get("estimated_completion")
+                            
+                            if start_time:
+                                from datetime import datetime
+                                start_dt = datetime.fromisoformat(start_time)
+                                st.write(f"**Started:** {start_dt.strftime('%H:%M:%S')}")
+                                
+                                if estimated_completion:
+                                    est_dt = datetime.fromisoformat(estimated_completion)
+                                    now = datetime.now()
+                                    remaining = (est_dt - now).total_seconds()
+                                    if remaining > 0:
+                                        st.write(f"**Remaining:** {remaining/60:.1f}m")
+                                    else:
+                                        st.write(f"**Overdue:** {(-remaining)/60:.1f}m")
+                    
+                    # Auto-refresh the page every 5 seconds to show updated progress
+                    time.sleep(5)
+                    st.rerun()
+                    
+                else:
+                    # Start the refresh
+                    st.info("🔄 Starting scheduled refresh...")
+                    success = run_scheduled_refresh()
+                    if success:
+                        st.success("✅ Refresh completed successfully!")
+                        # Clear cache and reset data state
+                        st.cache_data.clear()
+                        st.session_state.data_loaded = False
+                        st.session_state.base_data = None
+                        st.session_state.filtered_data = None
+                        st.session_state.generated_rates_df = None
+                        st.session_state.edited_rates_df = None
+                        
+            except Exception as e:
+                st.error(f"❌ Error checking refresh progress: {e}")
+                # Fallback to simple message
+                st.info("🔄 Running scheduled refresh...")
+                success = run_scheduled_refresh()
+                if success:
+                    st.success("✅ Refresh completed successfully!")
+                    # Clear cache and reset data state
+                    st.cache_data.clear()
+                    st.session_state.data_loaded = False
+                    st.session_state.base_data = None
+                    st.session_state.filtered_data = None
+                    st.session_state.generated_rates_df = None
+                    st.session_state.edited_rates_df = None
                 st.session_state.results_are_displayed = False
                 rerun()
             else:
@@ -1648,7 +1931,7 @@ with results_area:
                                     
                                     # Push button
                                     if st.button("🚀 Push to PriceLabs", key="table_push_button", type="primary"):
-                                        # Prepare rates for pushing - exclude no-change rows and de-duplicate per (listing, date)
+                                        # Prepare rates for pushing - exclude no-change rows and merge per (listing, date)
                                         rates_to_push = {}
                                         for rate in results['adjusted_rates']:
                                             # Only push real changes
@@ -1659,14 +1942,23 @@ with results_area:
 
                                             listing_id = rate['listing_id']
                                             date_key_push = rate['date']
+                                            
+                                            # Initialize structure if needed
                                             if listing_id not in rates_to_push:
                                                 rates_to_push[listing_id] = {}
-                                            # last-write-wins per (listing, date)
-                                            rates_to_push[listing_id][date_key_push] = {
-                                                "date": date_key_push,
-                                                "price": rate['new_price'],
-                                                "min_stay": rate['new_min_stay']
-                                            }
+                                            if date_key_push not in rates_to_push[listing_id]:
+                                                # Start with original values
+                                                rates_to_push[listing_id][date_key_push] = {
+                                                    "date": date_key_push,
+                                                    "price": rate['original_price'],
+                                                    "min_stay": rate['original_min_stay']
+                                                }
+                                            
+                                            # Merge changes - only update fields that actually changed
+                                            if rate['new_price'] != rate['original_price']:
+                                                rates_to_push[listing_id][date_key_push]["price"] = rate['new_price']
+                                            if rate['new_min_stay'] != rate['original_min_stay']:
+                                                rates_to_push[listing_id][date_key_push]["min_stay"] = rate['new_min_stay']
 
                                         # Convert inner dicts to lists for the batch API
                                         for lid in list(rates_to_push.keys()):
@@ -2017,11 +2309,13 @@ with results_area:
                     with col1:
                         adjustment_type = st.selectbox(
                             "Adjustment Type:",
-                            options=['percentage', 'value', 'set_value'],
+                            options=['percentage', 'value', 'set_value', 'batna', 'batna_plus'],
                             format_func=lambda x: {
                                 'percentage': 'Percentage (%)',
                                 'value': 'Fixed Amount ($)',
-                                'set_value': 'Set Specific Value ($)'
+                                'set_value': 'Set Specific Value ($)',
+                                'batna': 'BATNA Rate',
+                                'batna_plus': 'BATNA + Amount'
                             }[x],
                             key="simple_adj_type"
                         )
@@ -2037,6 +2331,15 @@ with results_area:
                                 min_value=0.0,
                                 value=default_set_value,
                                 step=10.0,
+                                format="%.2f",
+                                key="simple_adj_amount"
+                            )
+                        elif adjustment_type == 'batna_plus':
+                            amount = st.number_input(
+                                "Amount to Add to BATNA:",
+                                min_value=0.0,
+                                value=0.0,
+                                step=1.0,
                                 format="%.2f",
                                 key="simple_adj_amount"
                             )
@@ -2059,6 +2362,8 @@ with results_area:
                             key="simple_adj_direction"
                         )
                         actual_amount = amount if direction == 'increase' else -amount
+                    elif adjustment_type in ['batna', 'batna_plus']:
+                        actual_amount = amount  # For BATNA, amount is used as-is
                     else:
                         actual_amount = amount
                     # --- Preview (now outside the form, always live) ---
@@ -2076,6 +2381,22 @@ with results_area:
                                 new_price = round(new_price)
                             except Exception:
                                 new_price = round(current_price)
+                        elif adjustment_type == 'batna':
+                            # Get BATNA value for this listing
+                            listing_id = row.get(COL_LISTING_ID)
+                            batna_value = backend_interface.get_batna_for_listing(listing_id)
+                            if batna_value is not None:
+                                new_price = round(batna_value)
+                            else:
+                                new_price = round(current_price)  # Keep current if no BATNA found
+                        elif adjustment_type == 'batna_plus':
+                            # Get BATNA value and add amount
+                            listing_id = row.get(COL_LISTING_ID)
+                            batna_value = backend_interface.get_batna_for_listing(listing_id)
+                            if batna_value is not None:
+                                new_price = round(batna_value + amount)
+                            else:
+                                new_price = round(current_price)  # Keep current if no BATNA found
                         else:
                             new_price = round(apply_price_adjustment(current_price, adjustment_type, actual_amount))
                         preview_data.append({
@@ -2118,6 +2439,22 @@ with results_area:
                                         new_price = round(new_price)
                                     except Exception:
                                         new_price = round(current_price)
+                                elif adjustment_type == 'batna':
+                                    # Get BATNA value for this listing
+                                    listing_id = row.get(COL_LISTING_ID)
+                                    batna_value = backend_interface.get_batna_for_listing(listing_id)
+                                    if batna_value is not None:
+                                        new_price = round(batna_value)
+                                    else:
+                                        new_price = round(current_price)  # Keep current if no BATNA found
+                                elif adjustment_type == 'batna_plus':
+                                    # Get BATNA value and add amount
+                                    listing_id = row.get(COL_LISTING_ID)
+                                    batna_value = backend_interface.get_batna_for_listing(listing_id)
+                                    if batna_value is not None:
+                                        new_price = round(batna_value + amount)
+                                    else:
+                                        new_price = round(current_price)  # Keep current if no BATNA found
                                 else:
                                     new_price = round(apply_price_adjustment(current_price, adjustment_type, actual_amount))
                                 rate_id = row.get('_id')
@@ -2573,3 +2910,7 @@ with results_area:
 
     elif not st.session_state.generate_clicked and st.session_state.base_data is None:
         st.info("Configure parameters above and click 'Generate Rates' to begin.")
+
+
+
+

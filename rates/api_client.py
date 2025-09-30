@@ -16,9 +16,34 @@ class PriceLabsAPI:
         
         self.base_url = BASE_URL
         self.session = requests.Session()
+        
+        # Configure connection pooling for better performance
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        
+        # Create a retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        
+        # Create HTTP adapter with connection pooling
+        adapter = HTTPAdapter(
+            pool_connections=10,  # Number of connection pools to cache
+            pool_maxsize=20,      # Maximum number of connections to save in the pool
+            max_retries=retry_strategy
+        )
+        
+        # Mount the adapter for both HTTP and HTTPS
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
+        # Set headers
         self.session.headers.update({
             'X-API-Key': self.api_key,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Connection': 'keep-alive'  # Enable keep-alive for connection reuse
         })
 
     def get_listings(self) -> List[Dict]:
