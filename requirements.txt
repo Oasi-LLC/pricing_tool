@@ -1,8 +1,9 @@
-pandas~=2.0.3
+# Use versions with wheels for Python 3.12+ (Streamlit Cloud may use 3.12–3.14)
+pandas>=2.2.0,<3
+numpy>=1.26.0,<3
 click~=8.1.8
 requests~=2.32.3
 streamlit~=1.24.0
-numpy~=1.24.3
 streamlit-aggrid==0.3.4.post3
 pyyaml~=6.0.1
 watchdog~=4.0.0
