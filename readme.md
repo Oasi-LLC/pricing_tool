@@ -26,23 +26,37 @@ This tool is a dynamic, multi-property hotel and short-term rental rate manageme
 ## Directory Structure
 ```
 pricing_tool/
-├── app.py, app_2.py                # Streamlit web apps (main UI)
-├── run_pricing.py                  # CLI pricing engine
-├── generate_all_properties.py      # Batch data generation
-├── generate_pl_daily_comprehensive.py # Comprehensive pl_daily generator
-├── scheduler_daemon.py             # Background scheduler daemon
-├── manage_scheduler.sh             # Scheduler management script
-├── start_scheduler.sh              # Scheduler startup script
+├── app/
+│   └── app_2.py                    # Streamlit web app (main UI)
+├── scheduler/                      # Scheduler daemon and management scripts
+│   ├── scheduler_daemon.py         # Background scheduler daemon
+│   ├── scheduler_terminal.py       # Terminal scheduler with progress
+│   ├── manage_scheduler.sh         # Scheduler management (start/stop/status/logs)
+│   ├── manage_scheduler_session.sh # Screen session manager
+│   ├── start_scheduler.sh          # Start scheduler daemon
+│   └── start_scheduler_session.sh  # Start scheduler in screen session
+├── scripts/                        # Data generation and helpers
+│   ├── generate_all_properties.py # Batch pl_daily generation
+│   ├── generate_pl_daily_comprehensive.py # Comprehensive pl_daily generator
+│   ├── auto_recovery.py            # Auto-restart failed services
+│   ├── check_system_health.py      # System health checks
+│   └── push_flohom12_match_flohom7.py # One-off rate push script
+├── docs/                           # Documentation
+│   ├── CHANGELOG.md
+│   ├── SCHEDULER_README.md
+│   └── deployment_guide.md
 ├── config/
 │   ├── properties.yaml             # Property and listing configuration
-│   └── scheduler.yaml              # Scheduler configuration
+│   ├── scheduler.yaml              # Scheduler configuration
+│   ├── settings.yaml
+│   └── date_ranges.yaml
 ├── data/
 │   └── <property>/                 # Data per property (pl_daily, nightly overrides, etc.)
 ├── src/pricing_engine/             # Core pricing logic
 ├── utils/                          # Utility modules (backend interface, calendar view, scheduler, etc.)
 ├── rates/                          # API clients, push/pull scripts
-├── scripts/                        # Data fetchers, helpers
-├── output/, logs/                  # Output and log files
+├── run_pricing.py                  # CLI pricing engine
+├── logs/                           # Log files
 ├── requirements.txt                # Python dependencies
 ├── README.md                       # This file
 ```
@@ -138,21 +152,21 @@ python rate_evolution_tracker.py --listing-id 299754 --target-date 2025-10-16 --
 
 ## Usage
 ### Web Interface (Recommended)
-Run the enhanced Streamlit app:
+Run the enhanced Streamlit app (from project root):
 ```bash
-streamlit run app_2.py
+streamlit run app/app_2.py
 ```
 - Select property, date range, and generate rates
 - Review, adjust, and push rates/LOS with live preview
 - Monitor Auto-Refresh Scheduler status and manage automated data refresh
 
 ### Scheduler Management
-Start the automated data refresh scheduler:
+Start the automated data refresh scheduler (run from project root):
 ```bash
-./manage_scheduler.sh start    # Start the scheduler daemon
-./manage_scheduler.sh status   # Check if scheduler is running
-./manage_scheduler.sh stop     # Stop the scheduler daemon
-./manage_scheduler.sh logs     # View recent scheduler logs
+./scheduler/manage_scheduler.sh start    # Start the scheduler daemon
+./scheduler/manage_scheduler.sh status   # Check if scheduler is running
+./scheduler/manage_scheduler.sh stop     # Stop the scheduler daemon
+./scheduler/manage_scheduler.sh logs     # View recent scheduler logs
 ```
 
 ### Command Line
@@ -166,11 +180,11 @@ For each property, you need both the pl_daily data and the nightly pull override
 
 Generate pl_daily data for all properties:
 ```bash
-python generate_all_properties.py
+python scripts/generate_all_properties.py
 ```
 Or for a specific property:
 ```bash
-python generate_pl_daily_comprehensive.py --property <property_key>
+python scripts/generate_pl_daily_comprehensive.py <property_key>
 ```
 
 **Nightly Pull Overrides:**
@@ -178,11 +192,13 @@ python generate_pl_daily_comprehensive.py --property <property_key>
 - Place these files in the corresponding `data/<property_key>/` directory.
 
 **Auto-Refresh Scheduler:**
-- The scheduler automatically refreshes data at 1 AM and 1 PM Lisbon time
+- **Enabled by default.** Automatic data refresh runs at 1 AM and 1 PM Lisbon time.
+- **See status in the app:** In the Streamlit app sidebar, open **🔔 Auto-Refresh Scheduler** — you’ll see **🟢 Auto-Refresh Active** or **🔴 Auto-Refresh Inactive** and next/last refresh times.
+- **To turn off:** Uncheck **Enable Auto-Refresh** in that section, or set `enabled: false` in `config/scheduler.yaml`.
 - Runs independently of the Streamlit app for maximum reliability
 - Handles API rate limits with retry logic and configurable delays
 - Only refreshes properties that need updating (smart refresh)
-- See `SCHEDULER_README.md` for complete documentation
+- See `docs/SCHEDULER_README.md` for complete documentation
 
 ---
 

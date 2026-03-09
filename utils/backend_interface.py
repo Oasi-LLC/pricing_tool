@@ -161,23 +161,36 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
             except Exception as e:
                 logging.error(f"Error loading pl_daily data for {prop_name}: {e}")
             
-            # Load live rates data (including min_stay)
+            # Load live rates data (including min_stay and currency)
             live_rates_map = {}
             live_rates_filename = f"{prop_name}_nightly_pulled_overrides.csv"
             live_rates_path = Path("data") / prop_name / live_rates_filename
             if live_rates_path.exists():
                 try:
-                    live_rates_df = pd.read_csv(
-                        live_rates_path,
-                        usecols=['listing_id', 'date', 'price', 'min_stay'],
-                        dtype={'listing_id': str, 'date': str, 'price': float, 'min_stay': 'Int64'}
-                    )
-                    # Create mapping key: listing_id_date -> (price, min_stay)
+                    # Try to load with currency if available
+                    live_rates_df = pd.read_csv(live_rates_path)
+                    required_cols = ['listing_id', 'date', 'price', 'min_stay']
+                    has_currency = 'currency' in live_rates_df.columns
+                    
+                    if has_currency:
+                        live_rates_df = live_rates_df[required_cols + ['currency']]
+                    else:
+                        live_rates_df = live_rates_df[required_cols]
+                    
+                    live_rates_df = live_rates_df.astype({
+                        'listing_id': str, 
+                        'date': str, 
+                        'price': float, 
+                        'min_stay': 'Int64'
+                    })
+                    
+                    # Create mapping key: listing_id_date -> (price, min_stay, currency)
                     for _, row in live_rates_df.iterrows():
                         map_key = f"{row['listing_id']}_{row['date']}"
                         live_rates_map[map_key] = {
                             'price': row['price'],
-                            'min_stay': row['min_stay'] if pd.notna(row['min_stay']) else 1
+                            'min_stay': row['min_stay'] if pd.notna(row['min_stay']) else 1,
+                            'currency': row.get('currency', None) if has_currency else None
                         }
                     logging.info(f"Loaded {len(live_rates_map)} live rates from {live_rates_path}")
                 except Exception as e:
@@ -414,38 +427,70 @@ def get_listing_info(listing_id: str) -> tuple:
     except Exception:
         return "Unknown", "unknown"
 
-def get_batna_for_listing(listing_id: str) -> Optional[float]:
-    """Get BATNA value for a specific listing ID"""
+def _normalize_to_date(date_value):
+    """Convert various date representations to datetime.date"""
+    if date_value is None:
+        return None
+    try:
+        if isinstance(date_value, datetime.date) and not isinstance(date_value, datetime.datetime):
+            return date_value
+        if isinstance(date_value, datetime.datetime):
+            return date_value.date()
+        # Handle pandas Timestamp or numpy datetime64
+        if hasattr(date_value, "to_pydatetime"):
+            return date_value.to_pydatetime().date()
+        # Handle string in ISO/date formats
+        return pd.to_datetime(date_value).date()
+    except Exception:
+        return None
+
+def get_batna_for_listing(listing_id: str, date_value=None) -> Optional[float]:
+    """Get BATNA value for a specific listing ID, optionally date-aware"""
     try:
         properties_config = load_properties_config()
         if not properties_config:
             return None
+        
+        target_date = _normalize_to_date(date_value)
             
         # Search through all properties for the listing
         for property_data in properties_config.values():
             for listing in property_data.get('listings', []):
                 if listing['id'] == listing_id:
+                    # If split BATNA provided, choose weekday/weekend based on date
+                    batna_weekday = listing.get('batna_weekday')
+                    batna_weekend = listing.get('batna_weekend')
+                    if target_date and (batna_weekday is not None or batna_weekend is not None):
+                        weekday_idx = target_date.weekday() # Mon=0
+                        is_weekend = weekday_idx in (4, 5) # Fri, Sat
+                        if is_weekend and batna_weekend is not None:
+                            return batna_weekend
+                        if not is_weekend and batna_weekday is not None:
+                            return batna_weekday
                     return listing.get('batna')
         
         return None
     except Exception:
         return None
 
-def get_listing_batna_info(listing_id: str) -> tuple:
+def get_listing_batna_info(listing_id: str, date_value=None) -> tuple:
     """Get listing name, PMS, and BATNA value for a given listing ID"""
     try:
         properties_config = load_properties_config()
         if not properties_config:
             return "Unknown", "unknown", None
+        
+        target_date = _normalize_to_date(date_value)
             
         # Search through all properties for the listing
         for property_data in properties_config.values():
             for listing in property_data.get('listings', []):
                 if listing['id'] == listing_id:
+                    batna_value = get_batna_for_listing(listing_id, target_date)
                     return (
                         listing.get('name', 'Unknown'), 
                         property_data.get('pms', 'unknown'),
-                        listing.get('batna')
+                        batna_value
                     )
         
         return "Unknown", "unknown", None
@@ -472,7 +517,7 @@ def apply_batna_to_selection(selected_rows, batna_type: str, amount: float = 0) 
                 continue
                 
             # Get BATNA value for this listing
-            batna_value = get_batna_for_listing(listing_id)
+            batna_value = get_batna_for_listing(listing_id, row.get('Date'))
             if batna_value is None:
                 st.warning(f"No BATNA value found for listing {listing_id}")
                 continue

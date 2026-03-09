@@ -33,6 +33,9 @@ data/*/*.csv
 logs/scheduler_daemon.log
 logs/scheduler.log
 logs/last_scheduler_refresh.txt
+logs/last_scheduler_run_outcome.json
+logs/last_manual_refresh_result.json
+logs/scheduler_status.json
 
 *.idea.streamlit/secrets.toml
 .streamlit/secrets.toml

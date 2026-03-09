@@ -30,7 +30,7 @@ def check_streamlit_app():
     """Check if Streamlit app is running"""
     try:
         result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
-        if 'streamlit' in result.stdout and 'app_2.py' in result.stdout:
+        if 'streamlit' in result.stdout and ('app/app_2.py' in result.stdout or 'app_2.py' in result.stdout):
             return True, "✅ Streamlit app is running"
         else:
             return False, "❌ Streamlit app is not running"
@@ -39,7 +39,7 @@ def check_streamlit_app():
 
 def check_scheduler_logs():
     """Check recent scheduler logs for errors"""
-    log_file = Path("logs/scheduler_daemon.log")
+    log_file = project_root / "logs" / "scheduler_daemon.log"
     if not log_file.exists():
         return False, "❌ Scheduler log file not found"
     
@@ -62,7 +62,7 @@ def check_scheduler_logs():
 
 def check_last_refresh():
     """Check when the last refresh occurred"""
-    refresh_file = Path("logs/last_scheduler_refresh.txt")
+    refresh_file = project_root / "logs" / "last_scheduler_refresh.txt"
     if not refresh_file.exists():
         return False, "❌ No last refresh record found"
     
@@ -79,15 +79,15 @@ def check_last_refresh():
 def check_config_files():
     """Check if required config files exist"""
     config_files = [
-        "config/scheduler.yaml",
-        "config/properties.yaml",
-        "config/settings.yaml"
+        project_root / "config" / "scheduler.yaml",
+        project_root / "config" / "properties.yaml",
+        project_root / "config" / "settings.yaml"
     ]
     
     missing_files = []
     for config_file in config_files:
-        if not Path(config_file).exists():
-            missing_files.append(config_file)
+        if not config_file.exists():
+            missing_files.append(str(config_file))
     
     if missing_files:
         return False, f"❌ Missing config files: {', '.join(missing_files)}"

@@ -12,11 +12,17 @@ import calendar
 
 logger = logging.getLogger(__name__)
 
+def _default_config_path() -> Path:
+    """Resolve config path relative to project root so it works regardless of cwd (e.g. when Streamlit runs from app/)."""
+    project_root = Path(__file__).resolve().parent.parent
+    return project_root / "config" / "date_ranges.yaml"
+
+
 class DateRangeManager:
     """Centralized date range management for the pricing tool"""
     
-    def __init__(self, config_path: str = "config/date_ranges.yaml"):
-        self.config_path = Path(config_path)
+    def __init__(self, config_path: Optional[str] = None):
+        self.config_path = Path(config_path) if config_path else _default_config_path()
         self.config = self._load_config()
         self.current_year = self.config.get('current_year', datetime.now().year)
         
@@ -56,9 +62,13 @@ class DateRangeManager:
         }
     
     def get_full_calculation_range(self) -> Tuple[date, date]:
-        """Get the full date range for comprehensive rate calculations"""
+        """Get the full date range for comprehensive rate calculations. When full_start_days_back is set, start = today - N days; else uses fixed full_start_date."""
         config = self.config['data_generation']
-        start_date = datetime.strptime(config['full_start_date'], '%Y-%m-%d').date()
+        days_back = config.get('full_start_days_back')
+        if days_back is not None:
+            start_date = date.today() - timedelta(days=int(days_back))
+        else:
+            start_date = datetime.strptime(config['full_start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(config['full_end_date'], '%Y-%m-%d').date()
         return start_date, end_date
     
@@ -70,14 +80,19 @@ class DateRangeManager:
         return start_date, end_date
     
     def get_ui_default_range(self) -> Tuple[date, date]:
-        """Get the default date range for user interface"""
+        """Get the default date range for user interface. When ui_default_days_ahead is set, returns today to today + N days; otherwise uses fixed ui_default_start_date / ui_default_end_date."""
         config = self.config['data_generation']
+        days_ahead = config.get('ui_default_days_ahead')
+        if days_ahead is not None:
+            today = date.today()
+            end_date = today + timedelta(days=int(days_ahead))
+            return today, end_date
         start_date = datetime.strptime(config['ui_default_start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(config['ui_default_end_date'], '%Y-%m-%d').date()
         return start_date, end_date
     
     def get_scheduler_dynamic_range(self) -> Tuple[date, date]:
-        """Calculate dynamic date range for scheduler: last month to end of current year"""
+        """Calculate dynamic date range for scheduler: last month to fixed end date or end of current year"""
         today = datetime.now()
         config = self.config['dynamic_calculations']
         
@@ -92,37 +107,42 @@ class DateRangeManager:
         
         start_date = date(start_year, start_month, 1)
         
-        # Calculate end date (last day of current year + offset)
-        end_offset = config['scheduler_end_offset_months']
-        if today.month + end_offset <= 0:
-            end_year = today.year - 1
-            end_month = 12 + (today.month + end_offset)
+        # End date: use fixed scheduler_end_date if set, else offset-based
+        end_date_str = config.get('scheduler_end_date')
+        if end_date_str:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         else:
-            end_year = today.year
-            end_month = today.month + end_offset
-        
-        # Get last day of the month
-        last_day = calendar.monthrange(end_year, end_month)[1]
-        end_date = date(end_year, end_month, last_day)
+            end_offset = config['scheduler_end_offset_months']
+            if today.month + end_offset <= 0:
+                end_year = today.year - 1
+                end_month = 12 + (today.month + end_offset)
+            else:
+                end_year = today.year
+                end_month = today.month + end_offset
+            last_day = calendar.monthrange(end_year, end_month)[1]
+            end_date = date(end_year, end_month, last_day)
         
         return start_date, end_date
     
     def get_nightly_pull_range(self) -> Tuple[date, date]:
-        """Calculate date range for nightly pull: today to +N days, or same start as bulk processing if enabled"""
+        """Calculate date range for nightly pull: same start as bulk (or today) to +N days, capped at scheduler_end_date when set"""
         config = self.config['dynamic_calculations']
         days_ahead = config['nightly_pull_days_ahead']
         
         # Check if we should use the same start date as bulk processing
         if config.get('nightly_pull_use_bulk_start', False):
-            # Use same start date as bulk processing
             bulk_start, _ = self.get_bulk_processing_range()
             end_date = bulk_start + timedelta(days=days_ahead)
-            return bulk_start, end_date
         else:
-            # Use today as start date (original behavior)
             today = date.today()
+            bulk_start = today
             end_date = today + timedelta(days=days_ahead)
-            return today, end_date
+        # Cap end at scheduler_end_date when set (e.g. 2027-01-03)
+        end_date_str = config.get('scheduler_end_date')
+        if end_date_str:
+            cap_end = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            end_date = min(end_date, cap_end)
+        return bulk_start, end_date
     
     def get_bulk_processing_range(self) -> Tuple[date, date]:
         """Calculate date range for bulk processing: N days ago to end of current year"""

@@ -8,9 +8,12 @@ import logging
 import subprocess
 import sys
 import time
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 import pytz
 import os
 from .progress_tracker import progress_tracker
@@ -22,9 +25,13 @@ class SchedulerError(Exception):
     """Custom exception for scheduler errors"""
     pass
 
+def _project_root() -> Path:
+    """Project root (parent of utils/), so config paths work regardless of process cwd (e.g. when run from app)."""
+    return Path(__file__).resolve().parent.parent
+
 def load_scheduler_config() -> Dict:
     """Load scheduler configuration from YAML file"""
-    config_path = Path("config/scheduler.yaml")
+    config_path = _project_root() / "config" / "scheduler.yaml"
     try:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -33,6 +40,7 @@ def load_scheduler_config() -> Dict:
         logger.warning(f"Scheduler config not found at {config_path}, using defaults")
         return {
             'enabled': False,
+            'deployment_mode': 'local',
             'refresh_times': ["01:00", "13:00"],
             'timezone': "Europe/Lisbon",
             'max_retries': 3,
@@ -44,7 +52,7 @@ def load_scheduler_config() -> Dict:
 
 def save_scheduler_config(config: Dict) -> bool:
     """Save scheduler configuration to YAML file"""
-    config_path = Path("config/scheduler.yaml")
+    config_path = _project_root() / "config" / "scheduler.yaml"
     try:
         # Ensure config directory exists
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,6 +62,20 @@ def save_scheduler_config(config: Dict) -> bool:
         return True
     except Exception as e:
         logger.error(f"Error saving scheduler config: {e}")
+        return False
+
+def is_deployed_no_backend() -> bool:
+    """
+    True when running in a deployment with no persistent backend (e.g. Streamlit Cloud).
+    In this mode the scheduler daemon cannot run; only manual refresh from the app is available.
+    Checks: config scheduler.deployment_mode == 'cloud', or env PRICING_TOOL_DEPLOYED=1.
+    """
+    if os.environ.get('PRICING_TOOL_DEPLOYED', '').strip() in ('1', 'true', 'yes'):
+        return True
+    try:
+        config = load_scheduler_config()
+        return (config.get('deployment_mode') or 'local').lower() == 'cloud'
+    except Exception:
         return False
 
 def get_lisbon_time() -> datetime:
@@ -111,7 +133,7 @@ def is_time_to_refresh() -> bool:
             return False
         
         # Get last refresh time from session state or file
-        last_refresh_file = Path("logs/last_scheduler_refresh.txt")
+        last_refresh_file = _project_root() / "logs" / "last_scheduler_refresh.txt"
         if last_refresh_file.exists():
             try:
                 with open(last_refresh_file, 'r') as f:
@@ -236,10 +258,10 @@ def get_properties_needing_refresh() -> list:
         return []
 
 def estimate_api_call_volume() -> dict:
-    """Estimate the number of API calls that will be made"""
+    """Estimate the number of API calls that will be made (for full refresh of all properties)."""
     try:
         import yaml
-        config_path = Path("config/properties.yaml")
+        config_path = _project_root() / "config" / "properties.yaml"
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
@@ -309,7 +331,7 @@ def run_nightly_pull_with_retry() -> bool:
             start_time = time.time()
             result = subprocess.run([
                 sys.executable, "rates/pull/nightly_pull.py", start_date, end_date
-            ], capture_output=True, text=True, cwd=".")
+            ], capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent))
             
             duration = time.time() - start_time
             
@@ -343,144 +365,73 @@ def run_nightly_pull_with_retry() -> bool:
     return False
 
 def run_pl_daily_generation_with_retry() -> bool:
-    """Run pl_daily generation with retry logic, rate limiting, and enhanced progress tracking"""
+    """Run pl_daily generation for all properties via generate_all_properties.py with retry logic and rate limiting"""
     config = load_scheduler_config()
     max_retries = config.get('max_retries', 3)
     retry_delay = config.get('retry_delay_minutes', 1) * 60  # Convert to seconds
-    
-    # Get dynamic date range
-    start_date, end_date = get_dynamic_date_range()
-    logger.info(f"📅 Date range: {start_date} to {end_date}")
-    
-    # Get properties that need refreshing
+    rate_limiting_config = config.get('rate_limiting', {})
+
+    project_root = Path(__file__).resolve().parent.parent
+
+    # Get properties list for progress tracking (generate_all_properties processes all from config)
     properties_to_refresh = get_properties_needing_refresh()
     if not properties_to_refresh:
         logger.info("No properties need PL daily generation. Skipping.")
         progress_tracker.update_step_progress(100, "No properties needed PL daily generation")
         return True
-    
-    logger.info(f"📊 Processing PL daily generation for {len(properties_to_refresh)} properties individually")
-    
-    # Get total listings for progress tracking
-    try:
-        import yaml
-        with open('config/properties.yaml', 'r') as f:
-            yaml_config = yaml.safe_load(f)
-        
-        total_listings = 0
-        property_listings = {}
-        for prop in properties_to_refresh:
-            if prop in yaml_config['properties']:
-                listings_count = len(yaml_config['properties'][prop].get('listings', []))
-                property_listings[prop] = listings_count
-                total_listings += listings_count
-        
-        logger.info(f"📈 Total listings to process: {total_listings}")
-        
-    except Exception as e:
-        logger.error(f"Error counting listings: {e}")
-        total_listings = 0
-        property_listings = {}
-    
-    # Add rate limiting delay before starting PL daily generation
-    rate_limiting_config = config.get('rate_limiting', {})
+
+    logger.info(f"📊 Running generate_all_properties.py for all properties ({len(properties_to_refresh)} to refresh)")
+
+    # Add rate limiting delay before starting
     delay_between_ops = rate_limiting_config.get('delay_between_operations', 30)
     logger.info(f"⏳ Waiting {delay_between_ops} seconds before PL daily generation to respect API rate limits...")
     progress_tracker.update_step_progress(5, f"Waiting {delay_between_ops}s for rate limit reset")
     time.sleep(delay_between_ops)
-    
-    successful_properties = []
-    failed_properties = []
-    
-    # Process each property individually to avoid timeouts
-    for i, property_key in enumerate(properties_to_refresh):
-        property_start_time = time.time()
-        listings_count = property_listings.get(property_key, 0)
-        
-        logger.info(f"🔄 Property {i+1}/{len(properties_to_refresh)}: {property_key} ({listings_count} listings)")
-        progress_tracker.update_step_progress(
-            (i / len(properties_to_refresh)) * 100, 
-            f"Processing {property_key} ({listings_count} listings)"
-        )
-        
-        # Retry logic for individual property
-        property_success = False
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"🔄 Running PL daily generation for {property_key} (attempt {attempt + 1}/{max_retries})")
-                
-                # Run the pl_daily generation script for individual property
-                result = subprocess.run([
-                    sys.executable, "generate_pl_daily_comprehensive.py", 
-                    property_key, start_date, end_date
-                ], capture_output=True, text=True, cwd=".")
-                
-                if result.returncode == 0:
-                    duration = time.time() - property_start_time
-                    logger.info(f"✅ PL daily generation completed successfully for {property_key} in {duration/60:.1f}m")
-                    successful_properties.append(property_key)
-                    property_success = True
-                    
-                    # Update progress tracker
-                    progress_tracker.complete_property(property_key, True, duration, listings_count * 2)
-                    break
-                else:
-                    error_msg = f"PL daily generation failed for {property_key} (attempt {attempt + 1}): {result.stderr}"
-                    logger.error(error_msg)
-                    progress_tracker.add_error(error_msg)
-                    
-                    # Check if it's a rate limit error
-                    if "rate limit" in result.stderr.lower() or "429" in result.stderr:
-                        delay_on_rate_limit = rate_limiting_config.get('delay_on_rate_limit', 300)
-                        logger.warning(f"⚠️ Rate limit detected for {property_key}. Waiting {delay_on_rate_limit} seconds before retry...")
-                        progress_tracker.update_step_progress(
-                            (i / len(properties_to_refresh)) * 100, 
-                            f"Rate limit hit for {property_key}, waiting {delay_on_rate_limit}s"
-                        )
-                        time.sleep(delay_on_rate_limit)  # Wait for rate limit to reset
-                    
-            except Exception as e:
-                error_msg = f"PL daily generation error for {property_key} (attempt {attempt + 1}): {e}"
-                logger.error(error_msg)
-                progress_tracker.add_error(error_msg)
-            
-            # Wait before retry (except on last attempt)
-            if attempt < max_retries - 1:
-                logger.info(f"⏳ Waiting {retry_delay} seconds before retry for {property_key}...")
-                progress_tracker.update_step_progress(
-                    (i / len(properties_to_refresh)) * 100, 
-                    f"Waiting {retry_delay}s before retry for {property_key}"
-                )
-                time.sleep(retry_delay)
-        
-        if not property_success:
-            failed_properties.append(property_key)
-            logger.error(f"❌ PL daily generation failed for {property_key} after {max_retries} attempts")
-            progress_tracker.complete_property(property_key, False, time.time() - property_start_time, 0)
-        
-        # Add delay between properties to avoid overwhelming the API
-        if i < len(properties_to_refresh) - 1:  # Don't delay after the last property
-            delay_between_properties = rate_limiting_config.get('delay_between_properties', 10)
-            logger.info(f"⏳ Waiting {delay_between_properties} seconds before next property...")
-            progress_tracker.update_step_progress(
-                ((i + 1) / len(properties_to_refresh)) * 100, 
-                f"Waiting {delay_between_properties}s before next property"
+
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"🔄 Running generate_all_properties.py (attempt {attempt + 1}/{max_retries})")
+            progress_tracker.update_step_progress(10, "Running generate_all_properties.py")
+
+            start_time = time.time()
+            result = subprocess.run(
+                [sys.executable, "scripts/generate_all_properties.py"],
+                capture_output=True,
+                text=True,
+                cwd=str(project_root),
             )
-            time.sleep(delay_between_properties)
-    
-    # Summary
-    logger.info(f"📊 PL daily generation summary:")
-    logger.info(f"  - Successful: {len(successful_properties)} properties")
-    logger.info(f"  - Failed: {len(failed_properties)} properties")
-    
-    if failed_properties:
-        logger.warning(f"⚠️ Failed properties: {failed_properties}")
-    
-    # Update final progress
-    progress_tracker.update_step_progress(100, "PL daily generation completed")
-    
-    # Return True if at least some properties succeeded
-    return len(successful_properties) > 0
+            duration = time.time() - start_time
+
+            if result.returncode == 0:
+                logger.info(f"✅ generate_all_properties.py completed successfully in {duration/60:.1f}m")
+                progress_tracker.update_step_progress(100, "PL daily generation completed")
+                for prop in progress_tracker.properties_to_process:
+                    progress_tracker.complete_property(prop, True, duration / len(progress_tracker.properties_to_process), 0)
+                return True
+
+            error_msg = f"generate_all_properties.py failed (attempt {attempt + 1}): {result.stderr or result.stdout}"
+            logger.error(error_msg)
+            progress_tracker.add_error(error_msg)
+
+            if "429" in (result.stderr or "") or "429" in (result.stdout or "") or "rate limit" in (result.stderr or "").lower():
+                delay_on_rate_limit = rate_limiting_config.get('delay_on_rate_limit', 300)
+                logger.warning(f"⚠️ Rate limit detected. Waiting {delay_on_rate_limit}s before retry...")
+                progress_tracker.update_step_progress(50, f"Rate limit hit, waiting {delay_on_rate_limit}s")
+                time.sleep(delay_on_rate_limit)
+
+        except Exception as e:
+            error_msg = f"generate_all_properties.py error (attempt {attempt + 1}): {e}"
+            logger.error(error_msg)
+            progress_tracker.add_error(error_msg)
+
+        if attempt < max_retries - 1:
+            logger.info(f"⏳ Waiting {retry_delay} seconds before retry...")
+            progress_tracker.update_step_progress(50, f"Waiting {retry_delay}s before retry")
+            time.sleep(retry_delay)
+
+    logger.error(f"❌ PL daily generation failed after {max_retries} attempts")
+    progress_tracker.update_step_progress(0, "PL daily generation failed")
+    return False
 
 def verify_refresh_success() -> bool:
     """Verify that the refresh was successful by checking file timestamps"""
@@ -519,11 +470,35 @@ def verify_refresh_success() -> bool:
         logger.error(f"Error verifying refresh success: {e}")
         return False
 
+def _write_last_run_outcome(
+    success: bool,
+    properties_refreshed: Optional[int] = None,
+    error_step: Optional[str] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    """Write last run outcome to logs/last_scheduler_run_outcome.json for app display."""
+    try:
+        log_dir = _project_root() / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        outcome_file = log_dir / "last_scheduler_run_outcome.json"
+        data = {
+            "success": success,
+            "timestamp": datetime.now().isoformat(),
+            "properties_refreshed": properties_refreshed,
+            "error_step": error_step,
+            "error_message": error_message,
+        }
+        with open(outcome_file, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.debug("Could not write last run outcome: %s", e)
+
+
 def log_refresh_attempt(success: bool, error_message: str = None):
     """Log the refresh attempt"""
     try:
         # Ensure logs directory exists
-        log_dir = Path("logs")
+        log_dir = _project_root() / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Log to scheduler log file
@@ -546,6 +521,147 @@ def log_refresh_attempt(success: bool, error_message: str = None):
     except Exception as e:
         logger.error(f"Error logging refresh attempt: {e}")
 
+
+def _get_alert_webhook_url() -> Optional[str]:
+    """Return the webhook URL for failure alerts: env SCHEDULER_ALERT_WEBHOOK_URL overrides config (for security)."""
+    url = os.environ.get("SCHEDULER_ALERT_WEBHOOK_URL", "").strip()
+    if url:
+        return url
+    config = load_scheduler_config()
+    alerting = config.get("alerting") or {}
+    return (alerting.get("webhook_url") or "").strip() or None
+
+
+def send_custom_alert(text: str) -> bool:
+    """Send a custom message to the configured webhook (e.g. Slack). Returns True if sent. Used by app and scripts."""
+    try:
+        config = load_scheduler_config()
+        alerting = config.get("alerting") or {}
+        if not alerting.get("enabled"):
+            return False
+        webhook_url = _get_alert_webhook_url()
+        if not webhook_url:
+            return False
+        body = {"text": text}
+        req = Request(
+            webhook_url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urlopen(req, timeout=10)
+        logger.info("Custom alert sent via webhook")
+        return True
+    except Exception as e:
+        logger.warning("Could not send custom alert: %s", e)
+        return False
+
+
+def _is_alerting_enabled() -> bool:
+    """True if alerting is enabled and a webhook URL is configured."""
+    config = load_scheduler_config()
+    alerting = config.get("alerting") or {}
+    if not alerting.get("enabled"):
+        return False
+    return _get_alert_webhook_url() is not None
+
+
+def _send_started_alert(properties_count: int) -> None:
+    """Send an alert when a scheduled refresh starts (optional; controlled by alerting.notify_on_start)."""
+    try:
+        config = load_scheduler_config()
+        alerting = config.get("alerting") or {}
+        if not alerting.get("notify_on_start") or not alerting.get("enabled"):
+            return
+        webhook_url = _get_alert_webhook_url()
+        if not webhook_url:
+            return
+        msg = (
+            f"🔄 *Pricing Tool – refresh started*\n"
+            f"*Properties:* {properties_count}\n"
+            f"*Time:* {datetime.now().isoformat()}\n"
+            "Nightly pull → pl_daily. You’ll get another message when it finishes."
+        )
+        body = {"text": msg}
+        req = Request(
+            webhook_url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urlopen(req, timeout=10)
+        logger.info("Started alert sent via webhook")
+    except Exception as e:
+        logger.warning("Could not send started alert: %s", e)
+
+
+def _send_failure_alert(error_message: str, step: Optional[str] = None) -> None:
+    """Send an alert when a scheduled refresh fails. Uses SCHEDULER_ALERT_WEBHOOK_URL or config webhook_url."""
+    try:
+        config = load_scheduler_config()
+        alerting = config.get("alerting") or {}
+        if not alerting.get("enabled"):
+            return
+        webhook_url = _get_alert_webhook_url()
+        if not webhook_url:
+            return
+        step_label = step or "refresh"
+        body = {
+            "text": f"⚠️ *Pricing Tool – scheduled refresh failed*\n*Step:* {step_label}\n*Error:* {error_message}\n*Time:* {datetime.now().isoformat()}",
+        }
+        req = Request(
+            webhook_url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urlopen(req, timeout=10)
+        logger.info("Failure alert sent via webhook")
+    except URLError as e:
+        logger.warning(f"Could not send failure alert (webhook error): {e}")
+    except Exception as e:
+        logger.warning(f"Could not send failure alert: {e}")
+
+
+def _send_success_alert(properties_count: int = 0) -> None:
+    """Send an alert when a scheduled refresh completes successfully."""
+    try:
+        config = load_scheduler_config()
+        alerting = config.get("alerting") or {}
+        if not alerting.get("enabled"):
+            logger.info("Success alert skipped: alerting is disabled in config")
+            return
+        webhook_url = _get_alert_webhook_url()
+        if not webhook_url:
+            logger.warning("Success alert skipped: no webhook URL (set alerting.webhook_url or SCHEDULER_ALERT_WEBHOOK_URL)")
+            return
+        if properties_count == 0:
+            msg = (
+                "✅ *Pricing Tool – scheduled check completed*\n"
+                "*Result:* No properties needed refresh (data already up to date).\n"
+                f"*Time:* {datetime.now().isoformat()}"
+            )
+        else:
+            msg = (
+                f"✅ *Pricing Tool – scheduled refresh completed*\n"
+                f"*Properties refreshed:* {properties_count}\n"
+                f"*Time:* {datetime.now().isoformat()}"
+            )
+        body = {"text": msg}
+        req = Request(
+            webhook_url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urlopen(req, timeout=10)
+        logger.info("Success alert sent via webhook")
+    except URLError as e:
+        logger.warning("Could not send success alert (webhook error): %s", e, exc_info=True)
+    except Exception as e:
+        logger.warning("Could not send success alert: %s", e, exc_info=True)
+
+
 def run_scheduled_refresh() -> bool:
     """Run the complete scheduled refresh process with enhanced progress tracking"""
     logger.info("Starting scheduled data refresh")
@@ -555,6 +671,8 @@ def run_scheduled_refresh() -> bool:
     if not properties_to_refresh:
         logger.info("No properties need refreshing. Skipping scheduled refresh.")
         log_refresh_attempt(True, "No properties needed refresh")
+        _write_last_run_outcome(True, properties_refreshed=0)
+        _send_success_alert(0)  # 0 properties refreshed
         return True
     
     logger.info(f"Properties needing refresh: {properties_to_refresh}")
@@ -563,7 +681,7 @@ def run_scheduled_refresh() -> bool:
     total_calls = 0
     try:
         import yaml
-        with open('config/properties.yaml', 'r') as f:
+        with open(_project_root() / 'config' / 'properties.yaml', 'r') as f:
             yaml_config = yaml.safe_load(f)
         
         total_listings = 0
@@ -595,7 +713,8 @@ def run_scheduled_refresh() -> bool:
     
     # Initialize progress tracker
     progress_tracker.start_refresh(properties_to_refresh, total_calls)
-    
+    _send_started_alert(len(properties_to_refresh))
+
     try:
         # Step 1: Run nightly pull
         progress_tracker.start_step("nightly_pull", 1)
@@ -605,6 +724,8 @@ def run_scheduled_refresh() -> bool:
             progress_tracker.add_error(error_msg)
             progress_tracker.complete_refresh(False)
             log_refresh_attempt(False, error_msg)
+            _write_last_run_outcome(False, error_step="nightly_pull", error_message=error_msg)
+            _send_failure_alert(error_msg, step="nightly_pull")
             return False
         
         # Step 2: Run pl_daily generation
@@ -615,6 +736,8 @@ def run_scheduled_refresh() -> bool:
             progress_tracker.add_error(error_msg)
             progress_tracker.complete_refresh(False)
             log_refresh_attempt(False, error_msg)
+            _write_last_run_outcome(False, error_step="pl_daily_generation", error_message=error_msg)
+            _send_failure_alert(error_msg, step="pl_daily_generation")
             return False
         
         # Step 3: Verify refresh success
@@ -625,12 +748,16 @@ def run_scheduled_refresh() -> bool:
             progress_tracker.add_error(error_msg)
             progress_tracker.complete_refresh(False)
             log_refresh_attempt(False, error_msg)
+            _write_last_run_outcome(False, error_step="verification", error_message=error_msg)
+            _send_failure_alert(error_msg, step="verification")
             return False
         
         # Success
         progress_tracker.update_step_progress(100, "Refresh completed successfully")
         progress_tracker.complete_refresh(True)
         log_refresh_attempt(True)
+        _write_last_run_outcome(True, properties_refreshed=len(properties_to_refresh))
+        _send_success_alert(len(properties_to_refresh))
         return True
         
     except Exception as e:
@@ -639,26 +766,43 @@ def run_scheduled_refresh() -> bool:
         progress_tracker.complete_refresh(False)
         logger.error(error_msg)
         log_refresh_attempt(False, error_msg)
+        _write_last_run_outcome(False, error_step="scheduled_refresh", error_message=error_msg)
+        _send_failure_alert(error_msg, step="scheduled_refresh")
         return False
 
 def get_scheduler_status() -> Dict:
     """Get current scheduler status"""
     config = load_scheduler_config()
     enabled = config.get('enabled', False)
-    
+    deployed_no_backend = is_deployed_no_backend()
+
     status = {
         'enabled': enabled,
+        'deployed_no_backend': deployed_no_backend,
         'next_refresh': None,
         'last_refresh': None,
         'refresh_times': config.get('refresh_times', ["01:00", "13:00"]),
         'timezone': config.get('timezone', 'Europe/Lisbon')
     }
-    
+
     if enabled:
         status['next_refresh'] = get_next_refresh_time()
-        
-        # Get last refresh time
-        last_refresh_file = Path("logs/last_scheduler_refresh.txt")
+
+    # Last refresh time and outcome (for app display)
+    log_dir = _project_root() / "logs"
+    outcome_file = log_dir / "last_scheduler_run_outcome.json"
+    if outcome_file.exists():
+        try:
+            with open(outcome_file, 'r') as f:
+                status['last_run_outcome'] = json.load(f)
+            # Use outcome timestamp as last_refresh so "Last run" time matches success or failure
+            ts = status['last_run_outcome'].get('timestamp')
+            if ts:
+                status['last_refresh'] = datetime.fromisoformat(ts)
+        except Exception as e:
+            logger.debug("Error reading last run outcome: %s", e)
+    if status.get('last_refresh') is None:
+        last_refresh_file = log_dir / "last_scheduler_refresh.txt"
         if last_refresh_file.exists():
             try:
                 with open(last_refresh_file, 'r') as f:
@@ -666,5 +810,15 @@ def get_scheduler_status() -> Dict:
                     status['last_refresh'] = datetime.fromisoformat(last_refresh_str)
             except Exception as e:
                 logger.error(f"Error reading last refresh time: {e}")
-    
-    return status 
+
+    return status
+
+
+def get_refresh_progress() -> Dict:
+    """Return current refresh progress from status file (for display during manual/scheduled refresh)."""
+    try:
+        from .progress_tracker import get_scheduler_status as _read_progress
+        return _read_progress()
+    except Exception as e:
+        logger.debug(f"Could not read refresh progress: {e}")
+        return {'refresh_active': False, 'current_step': None, 'current_operation': None, 'total_progress': 0}

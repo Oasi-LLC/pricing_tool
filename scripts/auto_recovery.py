@@ -36,7 +36,7 @@ def start_scheduler_daemon():
         
         # Start new scheduler daemon
         subprocess.Popen([
-            'python', 'scheduler_daemon.py'
+            'python', 'scheduler/scheduler_daemon.py'
         ], cwd=project_root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         print("✅ Started scheduler daemon")
@@ -53,7 +53,7 @@ def start_streamlit_app():
         
         # Start new Streamlit app
         subprocess.Popen([
-            'streamlit', 'run', 'app_2.py'
+            'streamlit', 'run', 'app/app_2.py'
         ], cwd=project_root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         print("✅ Started Streamlit app")
@@ -64,7 +64,7 @@ def start_streamlit_app():
 
 def check_and_fix_timezone_issues():
     """Check and fix timezone-related issues in logs"""
-    log_file = Path("logs/scheduler_daemon.log")
+    log_file = project_root / "logs" / "scheduler_daemon.log"
     if not log_file.exists():
         return False
     
@@ -81,7 +81,7 @@ def check_and_fix_timezone_issues():
 
 def clear_old_logs():
     """Clear very old log entries to prevent log bloat"""
-    log_file = Path("logs/scheduler_daemon.log")
+    log_file = project_root / "logs" / "scheduler_daemon.log"
     if not log_file.exists():
         return
     
@@ -118,7 +118,7 @@ def main():
     streamlit_running = False
     try:
         result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
-        streamlit_running = 'streamlit' in result.stdout and 'app_2.py' in result.stdout
+        streamlit_running = 'streamlit' in result.stdout and ('app/app_2.py' in result.stdout or 'app_2.py' in result.stdout)
         print(f"{'✅' if streamlit_running else '❌'} Streamlit app")
     except:
         print("❌ Streamlit app")

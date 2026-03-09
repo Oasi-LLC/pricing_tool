@@ -2,45 +2,52 @@
 # This file manages all date ranges used throughout the pricing tool
 
 # Current year configuration
-current_year: 2025
+current_year: 2026
 
 # Data generation ranges
 data_generation:
   # Full calculation range - used for comprehensive rate calculations
-  full_start_date: "2025-09-01"
-  full_end_date: "2026-12-31"  # Changed from 2027 to current year
+  # When full_start_days_back is set, start = today - N days; otherwise use fixed full_start_date
+  full_start_days_back: 30
+  full_start_date: "2026-01-01"  # Fallback when full_start_days_back not set
+  full_end_date: "2027-01-03"
   
   # Operational range - used for daily operations and data pulls
-  operational_start_date: "2025-09-01"
-  operational_end_date: "2026-12-31"
+  operational_start_date: "2026-01-01"
+  operational_end_date: "2027-01-03"
   
-  # User interface range - default range shown in UI
-  ui_default_start_date: "2025-09-01"
-  ui_default_end_date: "2026-12-31"
+  # User interface range - default range shown in UI when app loads
+  # When ui_default_days_ahead is set, default is today to today + N days (e.g. 60)
+  ui_default_days_ahead: 60
+  # Fallback fixed dates when ui_default_days_ahead is not set
+  ui_default_start_date: "2026-01-01"
+  ui_default_end_date: "2027-01-03"
 
 # Dynamic calculation settings
 dynamic_calculations:
-  # Scheduler dynamic range: last month to end of current year
+  # Scheduler / nightly pull / PL daily end date (fixed; used when set)
+  scheduler_end_date: "2027-01-03"
+  # Scheduler dynamic range: last month to end (scheduler_end_date or offset)
   scheduler_start_offset_months: -1  # -1 = last month
-  scheduler_end_offset_months: 0     # 0 = end of current year
+  scheduler_end_offset_months: 0     # 0 = end of current year (ignored if scheduler_end_date set)
   
-  # Nightly pull range: same start as bulk processing to +585 days (extended for rate pushes)
-  nightly_pull_days_ahead: 585
+  # Nightly pull range: same start as bulk processing to +492 days (end capped at scheduler_end_date when set)
+  nightly_pull_days_ahead: 492
   nightly_pull_use_bulk_start: true  # Use same start date as bulk processing
   
-  # Bulk processing range: 30 days ago to end of current year + 18 months (extended for rate pushes)
+  # Bulk processing range: 30 days ago to end of current year + 15 months (extended for rate pushes)
   bulk_processing_days_back: 30
-  bulk_processing_end_offset_months: 18   # Extended to cover January 2027
+  bulk_processing_end_offset_months: 15   # Extended to cover February 2027
 
 # API operations
 api_operations:
   # Default range for manual API calls
-  default_start_date: "2025-09-01"
-  default_end_date: "2026-05-31"
+  default_start_date: "2026-01-01"
+  default_end_date: "2027-01-03"
   
   # Maximum range for API calls (safety limit)
   max_start_date: "2025-09-01"
-  max_end_date: "2026-12-31"
+  max_end_date: "2027-01-03"
 
 # Data retention
 data_retention:
