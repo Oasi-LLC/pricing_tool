@@ -2,10 +2,11 @@ scheduler:
   # Alerting: keep on for visibility. Sends to webhook_url (e.g. Slack) on start, success, and failure.
   # Optional override: SCHEDULER_ALERT_WEBHOOK_URL env var overrides webhook_url if set.
   # Run: python scripts/test_alert_webhook.py  to send a test message.
+  # IMPORTANT: Do not commit webhook_url. Set SCHEDULER_ALERT_WEBHOOK_URL in your environment (e.g. Streamlit Cloud secrets, or shell) instead.
   alerting:
     enabled: true   # Keep on so you always get start/success/failure alerts
     notify_on_start: true   # Alert when a refresh starts (then again on success or failure)
-    webhook_url: "https://hooks.slack.com/services/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"
+    # webhook_url: set via SCHEDULER_ALERT_WEBHOOK_URL env var only (never commit the URL)
   data_range:
     end_date: managed_by_centralized_config
     start_date: managed_by_centralized_config

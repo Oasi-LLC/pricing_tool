@@ -1,4 +1,7 @@
+# Secrets — never commit (Slack webhook, PriceLabs API key, etc.)
 .env
+.env.local
+.streamlit/secrets.toml
 *.sla
 nca-toolkit-project-446011-67d246fdbccf.json
 
@@ -38,4 +41,3 @@ logs/last_manual_refresh_result.json
 logs/scheduler_status.json
 
 *.idea.streamlit/secrets.toml
-.streamlit/secrets.toml
