@@ -1678,7 +1678,8 @@ with config_area:
             st.markdown("""
             <div style="background-color: #2d3748; padding: 12px; border-radius: 5px; border-left: 4px solid #63b3ed;">
                 <strong>☁️ Cloud deployment</strong><br>
-                <small>Refresh runs automatically when you open the app around scheduled times (1:00 & 13:22 Lisbon), or use <strong>Run refresh now</strong> / <strong>Refresh this property</strong> below.</small>
+                <small>Refresh runs automatically when you open the app around scheduled times (1:00 & 13:22 Lisbon), or use <strong>Run refresh now</strong> / <strong>Refresh this property</strong> below.</small><br>
+                <small>💡 <em>Data is stored only for this session; run a refresh after opening the app to load data and generate rates.</em></small>
             </div>
             """, unsafe_allow_html=True)
             st.markdown("---")
@@ -1687,12 +1688,12 @@ with config_area:
             nightly_time = None
             if current_selected_properties:
                 prop = current_selected_properties[0]
-                pl_daily_path = f"data/{prop}/pl_daily_{prop}.csv"
-                nightly_path = f"data/{prop}/{prop}_nightly_pulled_overrides.csv"
-                if os.path.exists(pl_daily_path):
-                    pl_daily_time = os.path.getmtime(pl_daily_path)
-                if os.path.exists(nightly_path):
-                    nightly_time = os.path.getmtime(nightly_path)
+                pl_daily_path = _project_root / "data" / prop / f"pl_daily_{prop}.csv"
+                nightly_path = _project_root / "data" / prop / f"{prop}_nightly_pulled_overrides.csv"
+                if pl_daily_path.exists():
+                    pl_daily_time = os.path.getmtime(str(pl_daily_path))
+                if nightly_path.exists():
+                    nightly_time = os.path.getmtime(str(nightly_path))
             import datetime as dt
             data_col1, data_col2 = st.columns(2)
             with data_col1:
@@ -1785,12 +1786,12 @@ with config_area:
             nightly_time = None
             if current_selected_properties:
                 prop = current_selected_properties[0]
-                pl_daily_path = f"data/{prop}/pl_daily_{prop}.csv"
-                nightly_path = f"data/{prop}/{prop}_nightly_pulled_overrides.csv"
-                if os.path.exists(pl_daily_path):
-                    pl_daily_time = os.path.getmtime(pl_daily_path)
-                if os.path.exists(nightly_path):
-                    nightly_time = os.path.getmtime(nightly_path)
+                pl_daily_path = _project_root / "data" / prop / f"pl_daily_{prop}.csv"
+                nightly_path = _project_root / "data" / prop / f"{prop}_nightly_pulled_overrides.csv"
+                if pl_daily_path.exists():
+                    pl_daily_time = os.path.getmtime(str(pl_daily_path))
+                if nightly_path.exists():
+                    nightly_time = os.path.getmtime(str(nightly_path))
             import datetime as dt
             try:
                 data_col1, data_col2 = st.columns(2)
@@ -1873,26 +1874,8 @@ with config_area:
 
                 # Cloud: scheduled refresh runs in background thread; show progress until done
                 if deployed_no_backend:
-                    if _cloud_thread_alive or refresh_active:
-                        st.info("🔄 **Scheduled refresh is running...**")
-                        try:
-                            progress = get_refresh_progress()
-                            step = progress.get("current_step") or "—"
-                            op = progress.get("current_operation") or "—"
-                            pct = progress.get("total_progress", 0)
-                            n_done = progress.get("properties_completed", 0)
-                            n_tot = progress.get("properties_total", 0)
-                            step_label = "Step 1: Nightly pull" if step == "nightly_pull" else ("Step 2: PL daily" if step == "pl_daily_generation" else step)
-                            st.markdown(f"**{step_label}** — {pct:.0f}%")
-                            if op and op != "—":
-                                st.caption(op)
-                            if n_tot > 0:
-                                st.caption(f"Properties: {n_done}/{n_tot} completed")
-                        except Exception:
-                            st.caption("Running…")
-                        time.sleep(2)
-                        st.rerun()
-                    elif _cloud_refresh_thread is not None and not _cloud_refresh_thread.is_alive():
+                    # Check thread-finished first so we clear banner even if status file is stale (refresh_active still True)
+                    if _cloud_refresh_thread is not None and not _cloud_refresh_thread.is_alive():
                         # Thread finished; show result from outcome file
                         _outcome_file = _project_root / "logs" / "last_scheduler_run_outcome.json"
                         if _outcome_file.exists():
@@ -1916,6 +1899,25 @@ with config_area:
                         else:
                             st.success("✅ Scheduled refresh completed.")
                         st.session_state.cloud_scheduled_refresh_thread = None
+                        st.rerun()
+                    elif _cloud_thread_alive or refresh_active:
+                        st.info("🔄 **Scheduled refresh is running...**")
+                        try:
+                            progress = get_refresh_progress()
+                            step = progress.get("current_step") or "—"
+                            op = progress.get("current_operation") or "—"
+                            pct = progress.get("total_progress", 0)
+                            n_done = progress.get("properties_completed", 0)
+                            n_tot = progress.get("properties_total", 0)
+                            step_label = "Step 1: Nightly pull" if step == "nightly_pull" else ("Step 2: PL daily" if step == "pl_daily_generation" else step)
+                            st.markdown(f"**{step_label}** — {pct:.0f}%")
+                            if op and op != "—":
+                                st.caption(op)
+                            if n_tot > 0:
+                                st.caption(f"Properties: {n_done}/{n_tot} completed")
+                        except Exception:
+                            st.caption("Running…")
+                        time.sleep(2)
                         st.rerun()
                     elif _time_to_refresh:
                         # Start scheduled refresh in background (cloud)

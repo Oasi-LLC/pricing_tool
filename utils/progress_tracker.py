@@ -112,7 +112,7 @@ class SchedulerProgressTracker:
         self._update_status_file()
         
     def complete_refresh(self, success: bool):
-        """Mark the refresh as completed"""
+        """Mark the refresh as completed and clear active state so UI stops showing 'running'."""
         end_time = datetime.now()
         duration = end_time - self.start_time if self.start_time else timedelta(0)
         
@@ -129,6 +129,8 @@ class SchedulerProgressTracker:
             logger.error(f"📊 Completed: {len(self.completed_properties)}/{len(self.properties_to_process)} properties")
             logger.error(f"⏱️ Duration before failure: {duration.total_seconds()/60:.1f} minutes")
         
+        # Clear active state so status file shows refresh_active: False and UI can clear "running" banner
+        self.start_time = None
         self._update_status_file()
         
     def _update_status_file(self):
