@@ -20,24 +20,10 @@ __pycache__/
 ._*
 .Spotlight-V100
 .Trashes
-venv/
 *.log
 
-# Logs directory
+# Logs (all log and status files under logs/)
 logs/
 
 # Data archives (backup files)
 data/*/archive/
-
-# Generated data files (these are created by the scheduler)
-data/*/*.csv
-
-# Scheduler logs
-logs/scheduler_daemon.log
-logs/scheduler.log
-logs/last_scheduler_refresh.txt
-logs/last_scheduler_run_outcome.json
-logs/last_manual_refresh_result.json
-logs/scheduler_status.json
-
-*.idea.streamlit/secrets.toml

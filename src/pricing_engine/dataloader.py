@@ -56,7 +56,9 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
         ValueError: If critical data cannot be processed (e.g., date parsing).
     """
     print(f"--- Loading data for property: {property_name} ---")
-    base_path = Path("data") / property_name
+    # Resolve data path from project root so it works regardless of cwd (e.g. Streamlit Cloud, app subdir)
+    _project_root = Path(__file__).resolve().parent.parent.parent
+    base_path = _project_root / "data" / property_name
     
     # Calculate total units for occupancy denominator
     # First try to use total_units field if available
