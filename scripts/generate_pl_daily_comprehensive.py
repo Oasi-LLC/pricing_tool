@@ -249,7 +249,7 @@ def generate_pl_daily_for_property(property_key, start_date, end_date):
     print(f"📊 Found {len(all_reservations)} total reservations from {pms} (fetched in {reservations_time:.2f}s)\n")
     
     # Process listings (sequential for heavy properties to avoid rate limit)
-    HEAVY_PROPERTIES = {'melrose1', 'azulik1'}
+    HEAVY_PROPERTIES = set()
     use_sequential = property_key in HEAVY_PROPERTIES
 
     all_records = []

@@ -100,7 +100,6 @@ All data files updated with new pricing data and occupancy information:
 - **fb1**: 14,503 lines changed (major restructuring)
 - **fb2**: 8,207 lines changed (major restructuring)
 - **flo1**: 13,392 lines changed (major restructuring)
-- **melrose1**: 6,136 lines changed
 - **pblu1**: 6,076 lines changed (OFFBOARDED - ParcBlu no longer in pricing tool)
 - **sos1**: 8,432 lines changed
 - **spm1**: 2,835 lines changed
@@ -198,7 +197,7 @@ All data files updated with new pricing data and occupancy information:
 - **Rules UI Integration**: Rules adjuster interface in both table and calendar views
 
 ### Changed
-- **Property Configuration**: Added extensive adjustment rules to multiple properties (fb1, fb2, pblu1 [offboarded], atx1, sos1, spm1, flo1, melrose1)
+- **Property Configuration**: Added extensive adjustment rules to multiple properties (fb1, fb2, pblu1 [offboarded], atx1, sos1, spm1, flo1)
 - **Scheduler Configuration**: Modified scheduler.yaml (disabled by default, reordered fields)
 - **Data Management**: Extended date ranges and added new listing configurations
 - **UI Enhancement**: Added rules adjuster expandable sections to main results area

@@ -25,13 +25,13 @@ properties:
       - {name: "Great Lodge: King Room", id: "203812___643775", units: 6, batna: 169.00}
       - {name: "Great Lodge: King Room (Accessible)", id: "203812___657152", units: 2, batna: 169.00}
       - {name: "Cypress Lodge | Sleeps 2", id: "203812___655826", units: 2, batna: 169.00}
-      - {name: "Cypress Lodge | Sleeps 4", id: "203812___643762", units: 2, batna: 229.00}
-      - {name: "Cypress Lodge | Sleeps 6", id: "203812___655827", units: 2, batna: 229.00}
+      - {name: "Cypress Lodge | Sleeps 4", id: "203812___643762", units: 2, batna: 289.00}
+      - {name: "Cypress Lodge | Sleeps 6", id: "203812___655827", units: 2, batna: 394.00}
       - {name: "Diamond", id: "203812___643771", units: 3, batna: 229.00}
       - {name: "Monolith", id: "203812___643773", units: 2, batna: 229.00}
       - {name: "Post Oak", id: "203812___643760", units: 1, batna: 169.00}
       - {name: "Quonset", id: "203812___643764", units: 2, batna: 209.00}
-      - {name: "Spiral", id: "203812___643772", units: 1, batna: 229.00}
+      - {name: "Spiral", id: "203812___643772", units: 1, batna: 209.00}
       - {name: "Winecup", id: "203812___643766", units: 2, batna: 209.00}
     rate_group_mapping:
       # Maps internal rate group keys (used by calculator.py)
@@ -299,13 +299,13 @@ properties:
     name: "Austin"
     pms: hostaway
     listings:
-      - {name: "Romney", id: "320201", batna: 139.00}
-      - {name: "Sunstrip", id: "320203", batna: 169.00}
-      - {name: "Malvern", id: "389561", batna: 159.00}
+      - {name: "Sunstrip", id: "320203", batna: 179.00}
+      - {name: "Malvern", id: "389561", batna: 600.00}
+      - {name: "Malvern (Loft Only) ", id: "511788", batna: 159.00}
     rate_group_mapping:
       rate_4: ["320203"] # Sunstrip
       rate_2: ["389561"] # Malvern
-      rate_1: ["320201"] # Romney
+      rate_1: ["511788"] # MLVRN Loft Only
     booking_window_definitions:
       - { label: "0-7 Days (W1)", min_days: 0, max_days: 7 }
       - { label: "8-30 Days (W2)", min_days: 8, max_days: 30 }
@@ -552,14 +552,17 @@ properties:
       - {name: "FLOHOM 12", id: "422608", batna: 250.00}
       - {name: "FLOHOM 13", id: "485833", batna: 315.00}
       - {name: "FLOHOM 14", id: "407612", batna: 150.00}
-    rate_group_mapping:
+      - {name: "FLOHOM 15", id: "467334", batna: 275.00}
+      - {name: "FLOHOM 16", id: "510832", batna: 300.00}
+      - {name: "Flohom 17", id: "514132", batna: 300.00}
+    rate_group_mapping:   
       rate_1: ["146946"] # FLOHOM 3 (lowest)
       rate_2: ["376368"] # FLOHOM 8
-      rate_3: ["278502", "383097", "404358", "407612", "422608", "427313", "485833"] # FLOHOM 5, FLOHOM 9, FLOHOM 10, FLOHOM 14, FLOHOM 12, FLOHOM 11, FLOHOM 13 (randomly assigned, review this!)
+      rate_3: ["278502", "383097", "404358", "407612", "422608", "427313", "485833", "510832", "514132"] # FLOHOM 5, FLOHOM 9, FLOHOM 10, FLOHOM 14, FLOHOM 12, FLOHOM 11, FLOHOM 13, FLOHOM 16, Flohom 17 (randomly assigned, review this!)
       rate_4: ["146944"] # FLOHOM 2
       rate_5: ["366176", "345316"] # FLOHOM 7, FLOHOM 6 (equal)
       rate_6: ["260001"] # FLOHOM 4
-      rate_7: ["146908"] # FLOHOM 1 (highest)
+      rate_7: ["146908", "467334"] # FLOHOM 1, FLOHOM 15 (highest)
       # TODO: Assign FLOHOM 14 to a rate group as needed
     booking_window_definitions:
       - { label: "0-13 Days (W1)", min_days: 0, max_days: 13 }
@@ -624,164 +627,87 @@ properties:
             target_adjacent_days: [1] # Sunday (+1) only
             check_adjacent_weekday_los: true # Check Monday (day after Sunday) is at 1-night
 
-  melrose1:
-    name: "Hotel Melrose"
-    pms: cloudbeds
-    listings:
-      - {name: "Kannah Creek Suites (Single King)", id: "257940___534397", units: 3, batna: 150.00}
-      - {name: "Ponsford Suite (Deluxe King)", id: "257940___537039", units: 7, batna: 165.00}
-      - {name: "Cattlemans Twofold (Deluxe Double Queen)", id: "257940___537043", units: 3, batna: 165.00}
-      - {name: "The London Double (Double Queen)", id: "257940___575558", units: 1, batna: 165.00}
-      - {name: "1884 Quarters (Single Queen)", id: "257940___537037", units: 2, batna: 150.00}
-    rate_group_mapping:
-      rate_1: ["257940___534397", "257940___537039"] # King suites
-      rate_2: ["257940___537043", "257940___575558"] # Double Queen suites
-      rate_3: ["257940___537037"] # Single Queen suite
-    booking_window_definitions:
-      - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
-      - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
-      - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
-      - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
-      - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
-      - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
-      - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
-    urgency_band_definitions:
-      - { label: "0-1", min_days: 0, max_days: 1 }
-      - { label: "2-3", min_days: 2, max_days: 3 }
-      - { label: "4-6", min_days: 4, max_days: 6 }
-      - { label: "7-9", min_days: 7, max_days: 9 }
-    urgency_configuration:
-      tier_groups: [ "T10-T12", "T13-T15"]
-      booking_window_label: "W1"
-      max_occupancy_pct: 30
-    adjustment_rules:
-      - name: "Thursday Rate Adjustment (Fri Booked)"
-        target_weekday: 3 # Thursday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: 1} # Check if Friday is booked
-        actions:
-          - condition: null # Default action if Friday booked
-            multiplier: 1.1
-            reference_day_offset: -1 # Base rate on Wednesday's live rate
-            lookup_day_group: "Mon-Wed"
-      - name: "Sunday Rate Adjustment (Sat Booked)"
-        target_weekday: 6 # Sunday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: -1} # Check Saturday
-        actions:
-          - condition: null # Always apply if Saturday booked
-            multiplier: 1.2
-            reference_day_offset: 1 # Base rate on Monday's live rate
-            lookup_day_group: "Mon-Wed"
-      - name: "Friday Orphan Adjustment"
-        target_weekday: 4 # Friday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: -1} # Check if Thursday is booked
-          - {type: "adjacent_day_booked", day_offset: 1}  # Check if Saturday is booked
-        actions:
-          - condition: null # Always apply if conditions met
-            multiplier: 0.8
-            reference_day_offset: 1 # Base rate on Saturday's live rate
-            lookup_day_group: "Fri-Sat"      
-      - name: "Saturday Booked - Thu/Fri Min Stay Reduction"
-        target_weekday: 5 # Saturday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
-        actions:
-          - condition: null # Always apply if Saturday booked
-            min_stay_adjustment: 1 # Reduce min stay to 1 night
-            target_adjacent_days: [-2, -1] # Thursday (-2) and Friday (-1)
-            check_adjacent_weekday_los: true # Check Wednesday (day before Thursday) is at 1-night
-      - name: "Saturday Booked - Sunday Min Stay Reduction"
-        target_weekday: 5 # Saturday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
-        actions:
-          - condition: null # Always apply if Saturday booked
-            min_stay_adjustment: 1 # Reduce min stay to 1 night
-            target_adjacent_days: [1] # Sunday (+1) only
-            check_adjacent_weekday_los: true # Check Monday (day after Sunday) is at 1-night
-
-  azulik1:
-    name: "Azulik"
-    pms: cloudbeds
-    total_units: 48 # 8 + 12 + 4 + 11 + 11 + 1 + 1
-    listings:
-      - {name: "AZULIK Jungle Villa", id: "283597___530612", units: 8, batna: 4638.00}
-      - {name: "AZULIK Mayan Villa", id: "283597___530715", units: 12, batna: 5565.00}
-      - {name: "AZULIK Aztec Villa", id: "283597___530718", units: 4, batna: 6122.00}
-      - {name: "AZULIK Sea Villa", id: "283597___530720", units: 11, batna: 7420.00}
-      - {name: "AZULIK Sky Villa", id: "283597___530761", units: 11, batna: 9275.00}
-      - {name: "AZULIK Moon Villa", id: "283597___530766", units: 1, batna: 51940.00}
-      - {name: "AZULIK Aqua Villa", id: "283597___530767", units: 1, batna: 40810.00}
-    rate_group_mapping:
-      rate_1: ["283597___530612", "283597___530718"] # Jungle Villa, Aztec Villa
-      rate_2: ["283597___530715", "283597___530720", "283597___530761"] # Mayan Villa, Sea Villa, Sky Villa
-      rate_3: ["283597___530766", "283597___530767"] # Moon Villa, Aqua Villa
-    booking_window_definitions:
-      - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
-      - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
-      - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
-      - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
-      - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
-      - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
-      - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
-    urgency_band_definitions:
-      - { label: "0-1", min_days: 0, max_days: 1 }
-      - { label: "2-3", min_days: 2, max_days: 3 }
-      - { label: "4-6", min_days: 4, max_days: 6 }
-      - { label: "7-9", min_days: 7, max_days: 9 }
-    urgency_configuration:
-      tier_groups: [ "T10-T12", "T13-T15"]
-      booking_window_label: "W1"
-      max_occupancy_pct: 30
-    adjustment_rules:
-      - name: "Thursday Rate Adjustment (Fri Booked)"
-        target_weekday: 3 # Thursday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: 1} # Check if Friday is booked
-        actions:
-          - condition: null # Default action if Friday booked
-            multiplier: 1.1
-            reference_day_offset: -1 # Base rate on Wednesday's live rate
-            lookup_day_group: "Mon-Wed"
-      - name: "Sunday Rate Adjustment (Sat Booked)"
-        target_weekday: 6 # Sunday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: -1} # Check Saturday
-        actions:
-          - condition: null # Always apply if Saturday booked
-            multiplier: 1.2
-            reference_day_offset: 1 # Base rate on Monday's live rate
-            lookup_day_group: "Mon-Wed"
-      - name: "Friday Orphan Adjustment"
-        target_weekday: 4 # Friday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: -1} # Check if Thursday is booked
-          - {type: "adjacent_day_booked", day_offset: 1}  # Check if Saturday is booked
-        actions:
-          - condition: null # Always apply if conditions met
-            multiplier: 0.8
-            reference_day_offset: 1 # Base rate on Saturday's live rate
-            lookup_day_group: "Fri-Sat"
-      - name: "Saturday Booked - Thu/Fri Min Stay Reduction"
-        target_weekday: 5 # Saturday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
-        actions:
-          - condition: null # Always apply if Saturday booked
-            min_stay_adjustment: 1 # Reduce min stay to 1 night
-            target_adjacent_days: [-2, -1] # Thursday (-2) and Friday (-1)
-            check_adjacent_weekday_los: true # Check Wednesday (day before Thursday) is at 1-night
-      - name: "Saturday Booked - Sunday Min Stay Reduction"
-        target_weekday: 5 # Saturday
-        conditions:
-          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
-        actions:
-          - condition: null # Always apply if Saturday booked
-            min_stay_adjustment: 1 # Reduce min stay to 1 night
-            target_adjacent_days: [1] # Sunday (+1) only
-            check_adjacent_weekday_los: true # Check Monday (day after Sunday) is at 1-night
+  # OFFBOARDED: Azulik (azulik1) - no longer part of pricing tool
+  # azulik1:
+  #   name: "Azulik"
+  #   pms: cloudbeds
+  #   total_units: 48 # 8 + 12 + 4 + 11 + 11 + 1 + 1
+  #   listings:
+  #     - {name: "AZULIK Jungle Villa", id: "283597___530612", units: 8, batna: 4638.00}
+  #     - {name: "AZULIK Mayan Villa", id: "283597___530715", units: 12, batna: 5565.00}
+  #     - {name: "AZULIK Aztec Villa", id: "283597___530718", units: 4, batna: 6122.00}
+  #     - {name: "AZULIK Sea Villa", id: "283597___530720", units: 11, batna: 7420.00}
+  #     - {name: "AZULIK Sky Villa", id: "283597___530761", units: 11, batna: 9275.00}
+  #     - {name: "AZULIK Moon Villa", id: "283597___530766", units: 1, batna: 51940.00}
+  #     - {name: "AZULIK Aqua Villa", id: "283597___530767", units: 1, batna: 40810.00}
+  #   rate_group_mapping:
+  #     rate_1: ["283597___530612", "283597___530718"] # Jungle Villa, Aztec Villa
+  #     rate_2: ["283597___530715", "283597___530720", "283597___530761"] # Mayan Villa, Sea Villa, Sky Villa
+  #     rate_3: ["283597___530766", "283597___530767"] # Moon Villa, Aqua Villa
+  #   booking_window_definitions:
+  #     - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
+  #     - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
+  #     - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
+  #     - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
+  #     - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
+  #     - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
+  #     - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
+  #   urgency_band_definitions:
+  #     - { label: "0-1", min_days: 0, max_days: 1 }
+  #     - { label: "2-3", min_days: 2, max_days: 3 }
+  #     - { label: "4-6", min_days: 4, max_days: 6 }
+  #     - { label: "7-9", min_days: 7, max_days: 9 }
+  #   urgency_configuration:
+  #     tier_groups: [ "T10-T12", "T13-T15"]
+  #     booking_window_label: "W1"
+  #     max_occupancy_pct: 30
+  #   adjustment_rules:
+  #     - name: "Thursday Rate Adjustment (Fri Booked)"
+  #       target_weekday: 3 # Thursday
+  #       conditions:
+  #         - {type: "adjacent_day_booked", day_offset: 1} # Check if Friday is booked
+  #       actions:
+  #         - condition: null # Default action if Friday booked
+  #           multiplier: 1.1
+  #           reference_day_offset: -1 # Base rate on Wednesday's live rate
+  #           lookup_day_group: "Mon-Wed"
+  #     - name: "Sunday Rate Adjustment (Sat Booked)"
+  #       target_weekday: 6 # Sunday
+  #       conditions:
+  #         - {type: "adjacent_day_booked", day_offset: -1} # Check Saturday
+  #       actions:
+  #         - condition: null # Always apply if Saturday booked
+  #           multiplier: 1.2
+  #           reference_day_offset: 1 # Base rate on Monday's live rate
+  #           lookup_day_group: "Mon-Wed"
+  #     - name: "Friday Orphan Adjustment"
+  #       target_weekday: 4 # Friday
+  #       conditions:
+  #         - {type: "adjacent_day_booked", day_offset: -1} # Check if Thursday is booked
+  #         - {type: "adjacent_day_booked", day_offset: 1}  # Check if Saturday is booked
+  #       actions:
+  #         - condition: null # Always apply if conditions met
+  #           multiplier: 0.8
+  #           reference_day_offset: 1 # Base rate on Saturday's live rate
+  #           lookup_day_group: "Fri-Sat"
+  #     - name: "Saturday Booked - Thu/Fri Min Stay Reduction"
+  #       target_weekday: 5 # Saturday
+  #       conditions:
+  #         - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
+  #       actions:
+  #         - condition: null # Always apply if Saturday booked
+  #           min_stay_adjustment: 1 # Reduce min stay to 1 night
+  #           target_adjacent_days: [-2, -1] # Thursday (-2) and Friday (-1)
+  #           check_adjacent_weekday_los: true # Check Wednesday (day before Thursday) is at 1-night
+  #     - name: "Saturday Booked - Sunday Min Stay Reduction"
+  #       target_weekday: 5 # Saturday
+  #       conditions:
+  #         - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
+  #       actions:
+  #         - condition: null # Always apply if Saturday booked
+  #           min_stay_adjustment: 1 # Reduce min stay to 1 night
+  #           target_adjacent_days: [1] # Sunday (+1) only
+  #           check_adjacent_weekday_los: true # Check Monday (day after Sunday) is at 1-night
 
   mayamod1:
     name: "Maya & Mod"
@@ -789,11 +715,11 @@ properties:
     listings:
       - {name: "Maya -- Maya Hotel Retreat", id: "6901008185d27c0022d3ba14", batna: 549.00, batna_weekday: 549.00, batna_weekend: 800.00}
       - {name: "Mod -- The Mod Hotel", id: "6901037df868fc002a10e0d7", batna: 449.00, batna_weekday: 449.00, batna_weekend: 700.00}
-      - {name: "M&M -- Maya & Mod Double Buyout", id: "6901051a7cc21d0029679ae6", batna: 976.00, batna_weekday: 976.00, batna_weekend: 1500.00}
+      # - {name: "M&M -- Maya & Mod Double Buyout", id: "6901051a7cc21d0029679ae6", batna: 976.00, batna_weekday: 976.00, batna_weekend: 1500.00}
     rate_group_mapping:
       rate_1: ["6901008185d27c0022d3ba14"] # Maya
       rate_2: ["6901037df868fc002a10e0d7"] # Mod
-      rate_3: ["6901051a7cc21d0029679ae6"] # M&M Double Buyout
+      # rate_3: ["6901051a7cc21d0029679ae6"] # M&M Double Buyout
     booking_window_definitions:
       - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
       - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
@@ -812,6 +738,176 @@ properties:
       booking_window_label: "W1"
       max_occupancy_pct: 30
     adjustment_rules:
+      - name: "Saturday Booked - Thu/Fri Min Stay Reduction"
+        target_weekday: 5 # Saturday
+        conditions:
+          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
+        actions:
+          - condition: null # Always apply if Saturday booked
+            min_stay_adjustment: 1 # Reduce min stay to 1 night
+            target_adjacent_days: [-2, -1] # Thursday (-2) and Friday (-1)
+            check_adjacent_weekday_los: true # Check Wednesday (day before Thursday) is at 1-night
+      - name: "Saturday Booked - Sunday Min Stay Reduction"
+        target_weekday: 5 # Saturday
+        conditions:
+          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
+        actions:
+          - condition: null # Always apply if Saturday booked
+            min_stay_adjustment: 1 # Reduce min stay to 1 night
+            target_adjacent_days: [1] # Sunday (+1) only
+            check_adjacent_weekday_los: true # Check Monday (day after Sunday) is at 1-night
+
+  lafavezion:
+    name: "Lafave Zion"
+    pms: resnexus
+    listings:
+      - {name: "LaFave: Luxury Rentals at Zion--(3BR/2BA) Johnson Mountain Villa", id: "4140___8114", batna: 836.00}
+      - {name: "LaFave: Luxury Rentals at Zion--(6BR/4BA) The Gallery House", id: "4140___8115", batna: 1280.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Suite BIG (1BR/1BA) Temple of Sinawava", id: "4140___8117", batna: 402.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Suite BIG (1BR/1BA) The Sentinel", id: "4140___8118", batna: 402.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Suite BIG (1BR/1BA) The Sundial", id: "4140___8119", batna: 402.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Suite SMALL (1BR/1BA) The Watchman", id: "4140___8120", batna: 348.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Suite SMALL (1BR/1BA) The Zion", id: "4140___8121", batna: 348.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Villa Game (2BR/2BA) Emerald Pools", id: "4140___8122", batna: 644.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Villa Game (2BR/2BA) The Subway", id: "4140___8123", batna: 644.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Villa Game (2BR/2BA) Meridian Tower", id: "4140___8124", batna: 644.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) Checkerboard Mesa", id: "4140___8125", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) Echo Canyon", id: "4140___8126", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) Mountain of the Sun", id: "4140___8127", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) Mystery Falls", id: "4140___8128", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) Big Springs", id: "4140___8129", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) East Temple", id: "4140___8130", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Villa Game (2BR/2BA) Lava Point", id: "4140___8131", batna: 644.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) Phantom Valley", id: "4140___8132", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premium Villa (2BR/2BA) Pine Creek", id: "4140___8133", batna: 701.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Deluxe Villa (2BR/1BA) Hidden Canyon", id: "4140___8134", batna: 465.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Deluxe Villa (2BR/1BA) Kolob Arch", id: "4140___8135", batna: 465.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Deluxe Villa (2BR/1BA) Northgate Peaks", id: "4140___8136", batna: 465.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Deluxe Villa (2BR/1BA) Orderville Canyon", id: "4140___8137", batna: 465.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Deluxe Villa (2BR/1BA) Kayenta", id: "4140___8138", batna: 465.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Deluxe Villa (2BR/1BA) Mount Kinesava", id: "4140___8139", batna: 465.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Deluxe Villa (2BR/1BA) Weeping Rock", id: "4140___8140", batna: 465.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premier Villa (3BR/3BA) Angels Landing", id: "4140___8141", batna: 871.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premier Villa (3BR/3BA) The Narrows", id: "4140___8142", batna: 871.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premier Villa (3BR/3BA) Cathedral Mountain", id: "4140___8143", batna: 871.00}
+      - {name: "LaFave: Luxury Rentals at Zion--Premier Villa (3BR/3BA) Virgin River", id: "4140___8144", batna: 871.00}
+    rate_group_mapping:
+      rate_1: ["4140___8114", "4140___8115", "4140___8117", "4140___8118", "4140___8119", "4140___8120", "4140___8121", "4140___8122", "4140___8123", "4140___8124", "4140___8125", "4140___8126", "4140___8127", "4140___8128", "4140___8129", "4140___8130", "4140___8131", "4140___8132", "4140___8133", "4140___8134", "4140___8135", "4140___8136", "4140___8137", "4140___8138", "4140___8139", "4140___8140", "4140___8141", "4140___8142", "4140___8143", "4140___8144"]
+    booking_window_definitions:
+      - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
+      - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
+      - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
+      - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
+      - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
+      - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
+      - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
+    urgency_band_definitions:
+      - { label: "0-1", min_days: 0, max_days: 1 }
+      - { label: "2-3", min_days: 2, max_days: 3 }
+      - { label: "4-6", min_days: 4, max_days: 6 }
+      - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: [ "T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 30
+    adjustment_rules:
+      - name: "Saturday Booked - Thu/Fri Min Stay Reduction"
+        target_weekday: 5 # Saturday
+        conditions:
+          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
+        actions:
+          - condition: null # Always apply if Saturday booked
+            min_stay_adjustment: 1 # Reduce min stay to 1 night
+            target_adjacent_days: [-2, -1] # Thursday (-2) and Friday (-1)
+            check_adjacent_weekday_los: true # Check Wednesday (day before Thursday) is at 1-night
+      - name: "Saturday Booked - Sunday Min Stay Reduction"
+        target_weekday: 5 # Saturday
+        conditions:
+          - {type: "adjacent_day_booked", day_offset: 0} # Check if Saturday is booked
+        actions:
+          - condition: null # Always apply if Saturday booked
+            min_stay_adjustment: 1 # Reduce min stay to 1 night
+            target_adjacent_days: [1] # Sunday (+1) only
+            check_adjacent_weekday_los: true # Check Monday (day after Sunday) is at 1-night
+    booking_window_definitions:
+      # Defines labels and day ranges for booking windows.
+      # Used by utils.get_booking_window_label.
+      # Ensure ranges cover all possibilities and don't overlap.
+      - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
+      - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
+      - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
+      - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
+      - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
+      - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
+      - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
+    urgency_band_definitions:
+      # Defines labels and day ranges for urgency bands.
+      # Used by utils.get_urgency_band.
+      - { label: "0-1", min_days: 0, max_days: 1 }
+      - { label: "2-3", min_days: 2, max_days: 3 }
+      - { label: "4-6", min_days: 4, max_days: 6 }
+      - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: [ "T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 30
+
+  blueridge:
+    name: "Blue Ridge"
+    pms: orbirental
+    total_units: 2
+    listings:
+      - {name: "Little Luxe Lodge - Wellness Experience", id: "3527b9f8-e4db-4220-8f47-f41ecda4d983", units: 1, batna: 200.00, batna_weekday: 200.00, batna_weekend: 300.00}
+      - {name: "Luxe Lodge A-Frame", id: "0dfcb2d6-226c-4a4a-a6eb-378ef134cd94", units: 1, batna: 550.00, batna_weekday: 550.00, batna_weekend: 800.00}
+    rate_group_mapping:
+      rate_1: ["3527b9f8-e4db-4220-8f47-f41ecda4d983"] # Little Luxe Lodge
+      rate_2: ["0dfcb2d6-226c-4a4a-a6eb-378ef134cd94"] # Luxe Lodge A-Frame
+    booking_window_definitions:
+      - { label: "0-9 Days (W1)", min_days: 0, max_days: 9 }
+      - { label: "10-21 Days (W2)", min_days: 10, max_days: 21 }
+      - { label: "22-30 Days (W3)", min_days: 22, max_days: 30 }
+      - { label: "31-45 Days (W4)", min_days: 31, max_days: 45 }
+      - { label: "46-59 Days (W5)", min_days: 46, max_days: 59 }
+      - { label: "60-120 Days (W6)", min_days: 60, max_days: 120 }
+      - { label: ">120 Days (W7)", min_days: 121, max_days: 9999 }
+    urgency_band_definitions:
+      - { label: "0-1", min_days: 0, max_days: 1 }
+      - { label: "2-3", min_days: 2, max_days: 3 }
+      - { label: "4-6", min_days: 4, max_days: 6 }
+      - { label: "7-9", min_days: 7, max_days: 9 }
+    urgency_configuration:
+      tier_groups: [ "T10-T12", "T13-T15"]
+      booking_window_label: "W1"
+      max_occupancy_pct: 30
+    adjustment_rules:
+      - name: "Thursday Rate Adjustment (Fri Booked)"
+        target_weekday: 3 # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+        conditions:
+          - {type: "adjacent_day_booked", day_offset: 1} # Check if Friday is booked
+        actions:
+          - condition: null # Default action if Friday booked
+            multiplier: 1.1
+            reference_day_offset: -1
+            lookup_day_group: "Mon-Wed"
+      - name: "Sunday Rate Adjustment (Sat Booked)"
+        target_weekday: 6 # Sunday
+        conditions:
+          - {type: "adjacent_day_booked", day_offset: -1} # Check Saturday
+        actions:
+          - condition: null # Always apply if Saturday booked
+            multiplier: 1.2
+            reference_day_offset: 1 # Base rate on Monday's tier
+            lookup_day_group: "Mon-Wed"
+      - name: "Friday Orphan Adjustment"
+        target_weekday: 4 # Friday
+        conditions:
+          - {type: "adjacent_day_booked", day_offset: -1} # Check if Thursday is booked
+          - {type: "adjacent_day_booked", day_offset: 1}  # Check if Saturday is booked
+        actions:
+          - condition: null # Always apply if conditions met
+            multiplier: 0.8
+            reference_day_offset: 1 # Base rate on Saturday's tier
+            lookup_day_group: "Fri-Sat" # Use Thu-Sun pricing group
       - name: "Saturday Booked - Thu/Fri Min Stay Reduction"
         target_weekday: 5 # Saturday
         conditions:

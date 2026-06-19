@@ -907,18 +907,9 @@ def update_selected_ids(new_ids, all_visible_ids):
 # Helper function to get currency for a listing
 def get_currency_for_listing(listing_id: str, property_key: str = None, date: str = None) -> str:
     """
-    Get currency for a listing. Defaults to MXN for azulik1, USD for others.
+    Get currency for a listing. Defaults to USD for all properties.
     Can also look up currency from override data if available.
     """
-    # Check if it's azulik property by property key (normalize to lowercase)
-    if property_key and property_key.lower() in ['azulik1', 'azulik']:
-        return 'MXN'
-    
-    # Fallback: Check if listing_id belongs to azulik by checking azulik override file
-    # Azulik listing IDs start with 283597___
-    if listing_id and listing_id.startswith('283597___'):
-        return 'MXN'
-    
     # Try to get currency from override data if date is provided
     if date and property_key:
         try:

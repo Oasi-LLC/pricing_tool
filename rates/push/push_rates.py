@@ -137,6 +137,7 @@ def push_rates_to_pricelabs(
         response = api_client.update_listing_overrides(
             listing_id=listing_id,
             overrides=formatted_overrides,
+            update_children=True,
             pms=pms
         )
         

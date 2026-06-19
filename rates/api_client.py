@@ -127,7 +127,7 @@ class PriceLabsAPI:
         listing_id: str,
         overrides: List[Dict],
         pms: str = None,
-        update_children: bool = False
+        update_children: bool = True
     ) -> Dict:
         """
         Update listing overrides with new prices

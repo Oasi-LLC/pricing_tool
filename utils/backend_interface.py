@@ -204,7 +204,9 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                 current_date_str = utils.format_date(current_date_obj)
                 day_group = utils.get_day_group(current_date_obj)
                 booking_window = utils.get_booking_window_label(current_date_obj, today, prop_config.get('booking_window_definitions', []))
-                tier_group = date_tier_map.get(current_date_str)
+                # Use T0 fallback when date tier is missing so properties with
+                # incomplete dates_tiers coverage are still included.
+                tier_group = date_tier_map.get(current_date_str, 'T0')
                 occupancy_pct = occupancy_map.get(current_date_str, 0.0)
                 # Assign urgency_band only if all urgency_configuration conditions are met
                 urgency_band = ""
@@ -221,11 +223,11 @@ def trigger_rate_generation(property_selection: list, start_date: datetime.date,
                 ):
                     urgency_band = utils.get_urgency_band(current_date_obj, today, prop_config.get('urgency_band_definitions', []))
 
-                if not tier_group:
-                    # st.warning(f"Tier group not found for {current_date_str} in property {prop_name}. Skipping rate calculation for this date.")
-                    logging.warning(f"Property {prop_name}: Tier group not found for {current_date_str}. Skipping rate calculation for this date.") # <-- Log warning
-                    # Option: Create a result row indicating missing tier?
-                    continue # Skip this date if no tier
+                if current_date_str not in date_tier_map:
+                    logging.warning(
+                        f"Property {prop_name}: Tier group not found for {current_date_str}. "
+                        "Falling back to T0."
+                    )
 
                 # Check for event multiplier for this date
                 event_multiplier = None
