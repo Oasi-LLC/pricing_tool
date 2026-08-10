@@ -131,6 +131,8 @@ COL_TIER = 'calculated_tier'
 COL_TIER_SRC = 'tier_group'
 COL_DAY_OF_WEEK = 'Day of Week'
 COL_LIVE_RATE = 'Live Rate $'
+COL_BATNA = 'BATNA $'
+COL_BATNA_DELTA = 'BATNA Delta %'
 COL_SUGGESTED = 'Suggested'
 COL_DELTA = 'Delta'
 COL_EDITABLE_PRICE = 'Editable Price'
@@ -170,7 +172,7 @@ CORE_COLS = [
     COL_SELECT, COL_DATE, COL_PROPERTY, COL_TIER, COL_DAY_OF_WEEK,
     COL_MIN_STAY,
     COL_OCC_CURR,
-    COL_LIVE_RATE, COL_SUGGESTED, COL_DELTA, COL_EDITABLE_PRICE,
+    COL_LIVE_RATE, COL_BATNA, COL_BATNA_DELTA, COL_SUGGESTED, COL_DELTA, COL_EDITABLE_PRICE,
     COL_FLAG, COL_STATUS
 ]
 
@@ -187,6 +189,8 @@ DEFAULT_VISIBLE_COLUMNS = [
     COL_EDITABLE_MIN_STAY,
     COL_OCC_CURR,
     COL_LIVE_RATE,
+    COL_BATNA,
+    COL_BATNA_DELTA,
     COL_SUGGESTED,
     COL_DELTA,
     COL_EDITABLE_PRICE,
@@ -205,6 +209,8 @@ COLUMN_DISPLAY_NAMES = {
     COL_DAY_OF_WEEK: "Day",
     COL_OCC_CURR: "Occ% Current",
     COL_LIVE_RATE: "Live Rate $",
+    COL_BATNA: "BATNA $",
+    COL_BATNA_DELTA: "BATNA Delta %",
     COL_SUGGESTED: "Suggested Rate $",
     COL_DELTA: "Delta %",
     COL_EDITABLE_PRICE: "Editable Rate $",
@@ -1065,6 +1071,23 @@ def calculate_derived_columns(df):
             )
         else:
             df[COL_DELTA] = np.nan
+
+    # BATNA reference and delta vs live rate (date-aware per listing)
+    if COL_LISTING_ID in df.columns and COL_DATE in df.columns:
+        df[COL_BATNA] = df.apply(
+            lambda row: backend_interface.get_batna_for_listing(row[COL_LISTING_ID], row[COL_DATE]),
+            axis=1,
+        )
+        live_rate = pd.to_numeric(df[COL_LIVE_RATE], errors='coerce') if COL_LIVE_RATE in df.columns else pd.Series(np.nan, index=df.index)
+        batna = pd.to_numeric(df[COL_BATNA], errors='coerce')
+        df[COL_BATNA_DELTA] = np.where(
+            batna.notna() & (batna != 0) & live_rate.notna(),
+            ((live_rate - batna) / batna) * 100,
+            np.nan,
+        )
+    else:
+        df[COL_BATNA] = np.nan
+        df[COL_BATNA_DELTA] = np.nan
     
     # Initialize Editable Price based on current toggle state
     if COL_EDITABLE_PRICE_SRC not in df.columns:
@@ -1076,6 +1099,67 @@ def calculate_derived_columns(df):
             df[COL_EDITABLE_PRICE_SRC] = 0.0
             
     return df
+
+def get_date_filter_default_str():
+    """Selected range start date for the main table date filter default."""
+    start = st.session_state.get('start_date')
+    if start is None:
+        return datetime.date.today().strftime('%Y-%m-%d')
+    if hasattr(start, 'strftime'):
+        return start.strftime('%Y-%m-%d')
+    return str(start)[:10]
+
+DATE_FILTER_COMPARATOR = JsCode("""
+function(filterLocalDateAtMidnight, cellValue) {
+    if (cellValue == null || cellValue === '') return -1;
+    var dateStr = String(cellValue).substring(0, 10);
+    var parts = dateStr.split('-');
+    if (parts.length !== 3) return -1;
+    var cellDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    cellDate.setHours(0, 0, 0, 0);
+    var filterDate = new Date(filterLocalDateAtMidnight.getTime());
+    filterDate.setHours(0, 0, 0, 0);
+    if (cellDate < filterDate) return -1;
+    if (cellDate > filterDate) return 1;
+    return 0;
+}
+""")
+
+def build_date_filter_model(date_col, default_date_str):
+    """Filter model dict for AG Grid date column."""
+    return {
+        date_col: {
+            'filterType': 'date',
+            'type': 'greaterThanOrEqual',
+            'dateFrom': f'{default_date_str} 00:00:00',
+        }
+    }
+
+def build_date_filter_grid_handlers(date_col, default_date_str):
+    """Seed AG Grid date filter UI with selected range start."""
+    filter_model_js = json.dumps(build_date_filter_model(date_col, default_date_str))
+    on_grid_ready = JsCode(f"""
+function(params) {{
+    var model = {filter_model_js};
+    function applyDefaultFilter() {{
+        params.api.setFilterModel(model);
+        params.api.onFilterChanged();
+    }}
+    applyDefaultFilter();
+    setTimeout(applyDefaultFilter, 200);
+}}
+""")
+    on_filter_opened = JsCode(f"""
+function(params) {{
+    if (params.column.getColId() !== '{date_col}') return;
+    var model = {filter_model_js};
+    var current = params.api.getFilterModel() || {{}};
+    if (current['{date_col}']) return;
+    params.api.setFilterModel(Object.assign({{}}, current, model));
+    params.api.onFilterChanged();
+}}
+""")
+    return on_grid_ready, on_filter_opened
 
 def initialize_session_state():
     """Initialize all session state variables"""
@@ -2316,10 +2400,16 @@ with results_area:
                 )
 
                 # Configure default options
+                date_filter_default = get_date_filter_default_str()
+                date_filter_on_ready, date_filter_on_opened = build_date_filter_grid_handlers(
+                    COL_DATE, date_filter_default
+                )
                 gb.configure_grid_options(
                     domLayout='autoHeight',
                     enableCellTextSelection=True,
                     ensureDomOrder=True,
+                    onGridReady=date_filter_on_ready,
+                    onFilterOpened=date_filter_on_opened,
                     defaultColDef={
                         'resizable': True,
                         'sortable': True,
@@ -2347,6 +2437,8 @@ with results_area:
                     COL_EDITABLE_MIN_STAY,
                     COL_OCC_CURR,
                     COL_LIVE_RATE,
+                    COL_BATNA,
+                    COL_BATNA_DELTA,
                     COL_SUGGESTED,
                     COL_DELTA,
                     COL_EDITABLE_PRICE,
@@ -2372,12 +2464,19 @@ with results_area:
                         if col == COL_DATE:
                             column_defs.append({
                                 **base_config,
+                                'colId': COL_DATE,
                                 'type': ["dateColumnFilter", "customDateTimeFormat"],
                                 'custom_format_string': 'YYYY-MM-DD',
+                                'filterParams': {
+                                    'comparator': DATE_FILTER_COMPARATOR,
+                                    'defaultOption': 'greaterThanOrEqual',
+                                    'inRangeInclusive': True,
+                                    'browserDatePicker': True,
+                                },
                                 'width': 120,
                                 'editable': False
                             })
-                        elif col in [COL_LIVE_RATE, COL_SUGGESTED, COL_EDITABLE_PRICE]:
+                        elif col in [COL_LIVE_RATE, COL_BATNA, COL_SUGGESTED, COL_EDITABLE_PRICE]:
                             column_defs.append({
                                 **base_config,
                                 'type': ["numericColumn", "numberColumnFilter", "customNumericFormat"],
@@ -2386,7 +2485,7 @@ with results_area:
                                 'editable': (col == COL_EDITABLE_PRICE),
                                 'width': 130
                             })
-                        elif col == COL_DELTA:
+                        elif col in [COL_DELTA, COL_BATNA_DELTA]:
                             column_defs.append({
                                 **base_config,
                                 'type': ["numericColumn", "numberColumnFilter", "customNumericFormat"],
@@ -2453,9 +2552,10 @@ with results_area:
 
                 grid_options = gb.build()
                 grid_options['columnDefs'] = column_defs
+                grid_options['filterModel'] = build_date_filter_model(COL_DATE, date_filter_default)
 
                 # Create grid with filtered columns and proper configuration
-                grid_key = 'main_grid_' + ('initial' if not st.session_state.initial_load_complete else 'updated')
+                grid_key = f"main_grid_{date_filter_default}_{st.session_state.end_date}_" + ('initial' if not st.session_state.initial_load_complete else 'updated')
                 grid_response = AgGrid(
                     display_df,
                     gridOptions=grid_options,
@@ -2550,6 +2650,8 @@ with results_area:
                             COL_EDITABLE_MIN_STAY: st.column_config.NumberColumn("Editable Min Stay", format="%.0f", required=True, min_value=1),
                             COL_OCC_CURR: st.column_config.NumberColumn("Occ% Current", format="%.1f%%", disabled=True),
                             COL_LIVE_RATE: st.column_config.NumberColumn("Live Rate $", format="$%.2f", disabled=True),
+                            COL_BATNA: st.column_config.NumberColumn("BATNA $", format="$%.2f", disabled=True),
+                            COL_BATNA_DELTA: st.column_config.NumberColumn("BATNA Delta %", format="%.1f%%", disabled=True),
                             COL_SUGGESTED: st.column_config.NumberColumn("Suggested Rate $", format="$%.2f", disabled=True),
                             COL_DELTA: st.column_config.NumberColumn("Delta %", format="%.1f%%", disabled=True),
                             COL_EDITABLE_PRICE_SRC: st.column_config.NumberColumn("Editable Rate $", format="$%.2f", required=True, min_value=0),

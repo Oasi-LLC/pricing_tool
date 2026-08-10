@@ -5,6 +5,7 @@ Morning data pipeline: generate pl_daily, pull nightly overrides, rules adjuster
 Run from project root:
     ./scripts/run_morning_data_pipeline.sh
     python scripts/run_morning_data_pipeline.py
+    python scripts/run_morning_data_pipeline.py --data-only        # pl_daily + nightly pull only
     python scripts/run_morning_data_pipeline.py --dry-run          # rules check only, no push
     python scripts/run_morning_data_pipeline.py --rules-push-only  # rules step only
 """
@@ -59,6 +60,7 @@ def _write_pipeline_summary(
     rules_ok,
     rules_push_ok,
     pipeline_ok,
+    skip_rules=False,
 ):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -87,8 +89,8 @@ def _write_pipeline_summary(
             "Step 2 — nightly_pull.py",
             f"  {'✅ SUCCESS' if nightly_pull_ok else '❌ FAILURE'}",
             "",
-            "Step 3 — rules adjuster (onera, wb1, flo1)",
-            f"  {'✅ SUCCESS' if rules_ok and rules_push_ok else '❌ FAILURE'}",
+            "Step 3 — rules adjuster + Monday Fri/Sat LOS (onera, wb1, flo1, spm1)",
+            "  ⏭️ SKIPPED (--data-only)" if skip_rules else f"  {'✅ SUCCESS' if rules_ok and rules_push_ok else '❌ FAILURE'}",
             "",
             f"Overall pipeline: {'✅ SUCCESS' if pipeline_ok else '❌ FAILURE'}",
             "=" * 80,
@@ -115,6 +117,7 @@ def run_pipeline(
     skip_data_steps=False,
     rules_push_only=False,
     rules_dry_run=False,
+    data_only=False,
 ):
     print("🌅 Morning data pipeline")
     print("=" * 80)
@@ -124,11 +127,13 @@ def run_pipeline(
     rules_ok = True
     rules_push_ok = True
 
+    if data_only:
+        print("⏭️ Data-only mode (--data-only): skipping rules adjuster")
     if rules_push_only:
         skip_data_steps = True
         print("⏭️ Rules push only mode (--rules-push-only)")
     elif not skip_data_steps:
-        print("Step 1/3: generate pl_daily for all properties")
+        print("Step 1/2: generate pl_daily for all properties" if data_only else "Step 1/3: generate pl_daily for all properties")
         print("=" * 80)
 
         pl_successful, pl_failed = process_all_properties(start_date, end_date)
@@ -143,7 +148,7 @@ def run_pipeline(
         _write_summary_log(start_date, end_date, pl_successful, pl_failed)
 
         print("\n" + "=" * 80)
-        print("Step 2/3: pull nightly overrides from PriceLabs")
+        print("Step 2/2: pull nightly overrides from PriceLabs" if data_only else "Step 2/3: pull nightly overrides from PriceLabs")
         print("=" * 80)
 
         log_start_pos = EXECUTION_LOG_FILE.stat().st_size if EXECUTION_LOG_FILE.exists() else 0
@@ -153,13 +158,14 @@ def run_pipeline(
         start_date = start_date or "skipped"
         end_date = end_date or "skipped"
 
-    print("\n" + "=" * 80)
-    print("Step 3/3: rules adjuster check and push (onera, wb1, flo1)")
-    print("=" * 80)
-    rules_ok, rules_push_ok, _ = run_rules_adjuster_pipeline(dry_run=rules_dry_run)
+    if not data_only:
+        print("\n" + "=" * 80)
+        print("Step 3/3: rules adjuster + Monday Fri/Sat LOS (onera, wb1, flo1, spm1)")
+        print("=" * 80)
+        rules_ok, rules_push_ok, _ = run_rules_adjuster_pipeline(dry_run=rules_dry_run)
 
     data_ok = not pl_failed and nightly_pull_ok
-    pipeline_ok = data_ok and rules_ok and rules_push_ok
+    pipeline_ok = data_ok if data_only else (data_ok and rules_ok and rules_push_ok)
 
     print("\n" + "=" * 80)
     print("📊 PIPELINE SUMMARY")
@@ -167,7 +173,10 @@ def run_pipeline(
     if not skip_data_steps:
         print(f"Step 1 (pl_daily): {len(pl_successful)} ok, {len(pl_failed)} failed")
         print(f"Step 2 (nightly pull): {'SUCCESS' if nightly_pull_ok else 'FAILURE'}")
-    print(f"Step 3 (rules adjuster): {'SUCCESS' if rules_ok and rules_push_ok else 'FAILURE'}")
+    if data_only:
+        print("Step 3 (rules adjuster): SKIPPED")
+    else:
+        print(f"Step 3 (rules adjuster): {'SUCCESS' if rules_ok and rules_push_ok else 'FAILURE'}")
     print(f"Overall pipeline: {'SUCCESS' if pipeline_ok else 'FAILURE'}")
 
     _write_pipeline_summary(
@@ -179,6 +188,7 @@ def run_pipeline(
         rules_ok,
         rules_push_ok,
         pipeline_ok,
+        skip_rules=data_only,
     )
 
     return pipeline_ok
@@ -191,7 +201,8 @@ if __name__ == "__main__":
     argv = sys.argv[1:]
     rules_push_only = "--rules-push-only" in argv
     rules_dry_run = "--dry-run" in argv
-    args = [a for a in argv if a not in ("--rules-push-only", "--dry-run")]
+    data_only = "--data-only" in argv
+    args = [a for a in argv if a not in ("--rules-push-only", "--dry-run", "--data-only")]
 
     if len(args) > 2:
         cli_start_date = args[0]
@@ -206,5 +217,6 @@ if __name__ == "__main__":
         skip_data_steps=rules_push_only,
         rules_push_only=rules_push_only,
         rules_dry_run=rules_dry_run,
+        data_only=data_only,
     )
     sys.exit(0 if success else 1)

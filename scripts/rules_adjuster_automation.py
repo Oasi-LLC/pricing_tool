@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Apply rules-adjuster logic and push changes for onera, wb1 (wmb), and flo1 (flohom).
+Apply rules-adjuster logic and push changes for onera, wb1 (wmb), flo1 (flohom), and spm1.
+
+On Mondays, also sets upcoming Fri/Sat LOS from 2n to 1n for onera, wb1, flo1, spm1.
+Multi-unit listings (onera, wb1) still push when partially booked; only fully booked nights are skipped.
 
 Run from project root:
     python scripts/rules_adjuster_automation.py
@@ -9,8 +12,9 @@ Run from project root:
 
 from __future__ import annotations
 
+import csv
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -28,9 +32,10 @@ from utils import backend_interface
 from utils.date_manager import get_full_calculation_range, get_ui_default_range
 from utils.rules_adjuster import apply_rules_to_live_rates
 
-# Config keys in properties.yaml (aliases: wmb -> wb1, flohom -> flo1)
+# Config keys in properties.yaml (aliases: wmb -> wb1, flohom -> flo1, spoon -> spm1)
 RULES_AUTOMATION_PROPERTIES = ["onera", "wb1", "flo1"]
-PROPERTY_ALIASES = {"wmb": "wb1", "flohom": "flo1", "onera": "onera"}
+MONDAY_WEEKEND_LOS_PROPERTIES = ["onera", "wb1", "flo1", "spm1"]
+PROPERTY_ALIASES = {"wmb": "wb1", "flohom": "flo1", "onera": "onera", "spoon": "spm1"}
 
 LOG_DIR = _project_root / "logs"
 RULES_LOG = LOG_DIR / "rules_adjuster_automation_summary.txt"
@@ -124,6 +129,116 @@ def prepare_rates_to_push(adjusted_rates: List[dict]) -> Dict[str, List[dict]]:
     return {lid: list(dates.values()) for lid, dates in rates_to_push.items()}
 
 
+def merge_push_payloads(
+    primary: Dict[str, List[dict]], secondary: Dict[str, List[dict]]
+) -> Dict[str, List[dict]]:
+    """Merge push payloads by listing/date; secondary fields overlay primary."""
+    merged: Dict[str, Dict[str, dict]] = {}
+    for source in (primary, secondary):
+        for listing_id, rates in source.items():
+            if listing_id not in merged:
+                merged[listing_id] = {}
+            for rate in rates:
+                date_key = rate["date"]
+                if date_key in merged[listing_id]:
+                    merged[listing_id][date_key].update(
+                        {k: v for k, v in rate.items() if k != "date"}
+                    )
+                else:
+                    merged[listing_id][date_key] = dict(rate)
+    return {lid: list(dates.values()) for lid, dates in merged.items()}
+
+
+def _load_fully_booked_nights(
+    property_key: str, listing_id: str, dates: List[str], units: int = 1
+) -> set:
+    """Return dates with no sellable inventory (booked >= units)."""
+    pl_path = _project_root / "data" / property_key / f"pl_daily_{property_key}.csv"
+    fully_booked = set()
+    if not pl_path.exists():
+        return fully_booked
+    with pl_path.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if str(row.get("Listing ID", "")).strip() != str(listing_id):
+                continue
+            day = row["Date"][:10]
+            if day in dates and float(row.get("No. Booked") or 0) >= units:
+                fully_booked.add(day)
+    return fully_booked
+
+
+def build_monday_weekend_los_pushes() -> Tuple[Dict[str, List[dict]], dict]:
+    """
+    On Monday: set upcoming Fri/Sat min stay 2 -> 1 for MONDAY_WEEKEND_LOS_PROPERTIES.
+    Uses freshly pulled nightly overrides; skips only fully booked nights (booked >= units);
+    keeps price unchanged.
+    """
+    today = date.today()
+    if today.weekday() != 0:
+        return {}, {"applied": False, "reason": "not Monday"}
+
+    fri = today + timedelta(days=4)
+    sat = today + timedelta(days=5)
+    target_dates = [fri.isoformat(), sat.isoformat()]
+
+    properties_config = backend_interface.load_properties_config() or {}
+    pushes: Dict[str, List[dict]] = {}
+    stats = {
+        "applied": True,
+        "fri": fri.isoformat(),
+        "sat": sat.isoformat(),
+        "changes": 0,
+        "by_property": {},
+    }
+
+    for property_key in MONDAY_WEEKEND_LOS_PROPERTIES:
+        prop_cfg = properties_config.get(property_key, {})
+        listings = prop_cfg.get("listings", [])
+        override_path = _project_root / "data" / property_key / f"{property_key}_nightly_pulled_overrides.csv"
+        if not override_path.exists():
+            continue
+
+        overrides_by_listing: Dict[str, Dict[str, dict]] = {}
+        with override_path.open(newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row["date"] not in target_dates:
+                    continue
+                lid = str(row["listing_id"])
+                overrides_by_listing.setdefault(lid, {})[row["date"]] = row
+
+        prop_changes = 0
+        for listing in listings:
+            listing_id = str(listing["id"])
+            units = int(listing.get("units") or 1)
+            fully_booked = _load_fully_booked_nights(
+                property_key, listing_id, target_dates, units
+            )
+            for day in target_dates:
+                if day in fully_booked:
+                    continue
+                override = overrides_by_listing.get(listing_id, {}).get(day)
+                if not override or override.get("price") is None:
+                    continue
+                min_stay = int(float(override.get("min_stay") or 1))
+                if min_stay != 2:
+                    continue
+                pushes.setdefault(listing_id, []).append(
+                    {
+                        "date": day,
+                        "price": float(override["price"]),
+                        "min_stay": 1,
+                        "currency": override.get("currency") or "USD",
+                    }
+                )
+                prop_changes += 1
+
+        if prop_changes:
+            stats["by_property"][property_key] = prop_changes
+            stats["changes"] += prop_changes
+
+    return pushes, stats
+
+
 def _summarize_changes_by_property(adjusted_rates: List[dict]) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     for rate in adjusted_rates:
@@ -145,6 +260,7 @@ def _write_rules_summary(
     push_count: int,
     push_success_count: int,
     push_total_listings: int,
+    monday_los_stats: Optional[dict] = None,
 ):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     from datetime import datetime
@@ -168,6 +284,19 @@ def _write_rules_summary(
         lines.append("  Changes by property:")
         for prop, count in sorted(changes_by_prop.items()):
             lines.append(f"    - {prop}: {count}")
+    if monday_los_stats and monday_los_stats.get("applied"):
+        lines.extend(
+            [
+                "",
+                "Monday upcoming weekend LOS (Fri/Sat 2n -> 1n):",
+                f"  Dates: {monday_los_stats.get('fri')} (Fri), {monday_los_stats.get('sat')} (Sat)",
+                f"  Changes: {monday_los_stats.get('changes', 0)}",
+            ]
+        )
+        for prop, count in sorted(monday_los_stats.get("by_property", {}).items()):
+            lines.append(f"    - {prop}: {count}")
+    elif monday_los_stats and not monday_los_stats.get("applied"):
+        lines.append(f"  Monday weekend LOS: skipped ({monday_los_stats.get('reason', 'n/a')})")
     lines.extend(
         [
             "",
@@ -231,12 +360,29 @@ def run_rules_adjuster_pipeline(
         print("   • No adjustments required")
 
     rates_to_push = prepare_rates_to_push(results.get("adjusted_rates", []))
+
+    monday_pushes, monday_los_stats = build_monday_weekend_los_pushes()
+    if monday_los_stats.get("applied"):
+        print(
+            f"\n📅 Monday weekend LOS: upcoming Fri {monday_los_stats['fri']} / "
+            f"Sat {monday_los_stats['sat']} — 2n -> 1n on "
+            f"{', '.join(MONDAY_WEEKEND_LOS_PROPERTIES)}"
+        )
+        if monday_los_stats.get("changes"):
+            for prop, count in sorted(monday_los_stats.get("by_property", {}).items()):
+                print(f"   • {prop}: {count} night(s)")
+        else:
+            print("   • No Fri/Sat nights at 2n min stay (or all fully booked)")
+    rates_to_push = merge_push_payloads(rates_to_push, monday_pushes)
+
     push_count = sum(len(rates) for rates in rates_to_push.values())
     push_total_listings = len(rates_to_push)
 
     if push_count == 0:
         print("\nℹ️ Nothing to push — all rules evaluated with no actionable changes")
-        _write_rules_summary(resolved_keys, ui_start, ui_end, True, True, dry_run, results, 0, 0, 0)
+        _write_rules_summary(
+            resolved_keys, ui_start, ui_end, True, True, dry_run, results, 0, 0, 0, monday_los_stats
+        )
         return True, True, results
 
     print(f"\n📤 Prepared {push_count} rate override(s) across {push_total_listings} listing(s)")
@@ -247,7 +393,9 @@ def run_rules_adjuster_pipeline(
                 print(f"   [dry-run] listing {listing_id} {rate['date']}: price={rate.get('price')} min_stay={rate.get('min_stay')}")
             if len(rates) > 3:
                 print(f"   [dry-run] ... and {len(rates) - 3} more for listing {listing_id}")
-        _write_rules_summary(resolved_keys, ui_start, ui_end, True, True, dry_run, results, push_count, 0, push_total_listings)
+        _write_rules_summary(
+            resolved_keys, ui_start, ui_end, True, True, dry_run, results, push_count, 0, push_total_listings, monday_los_stats
+        )
         return True, True, results
 
     print("\n🚀 Pushing to PriceLabs...")
@@ -278,6 +426,7 @@ def run_rules_adjuster_pipeline(
         push_count,
         push_success_count,
         push_total_listings,
+        monday_los_stats,
     )
     return True, push_ok, results
 

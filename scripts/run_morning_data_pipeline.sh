@@ -1,5 +1,6 @@
 #!/bin/bash
 # Morning data pipeline — activates venv, then runs pl_daily + nightly pull + rules push.
+# Use --data-only to skip rules adjuster: ./scripts/run_morning_data_pipeline.sh --data-only
 
 set -euo pipefail
 
