@@ -556,6 +556,13 @@ properties:
       - {name: "FLOHOM 15", id: "467334", batna: 225.00}
       - {name: "FLOHOM 16", id: "510832", batna: 300.00}
       - {name: "Flohom 17", id: "514132", batna: 250.00}
+    # Date-scoped BATNA adjustments applied on top of listing batna (see get_batna_for_listing)
+    batna_overrides:
+      - name: "Dec 2026 Mon-Wed -$25"
+        start_date: "2026-12-01"
+        end_date: "2026-12-31"
+        weekdays: [0, 1, 2] # Mon, Tue, Wed
+        offset: -25.00
     rate_group_mapping:   
       rate_1: ["146946"] # FLOHOM 3 (lowest)
       rate_2: ["376368"] # FLOHOM 8

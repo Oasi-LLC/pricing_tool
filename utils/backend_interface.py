@@ -446,6 +446,31 @@ def _normalize_to_date(date_value):
     except Exception:
         return None
 
+def _apply_batna_overrides(base_batna: float, property_data: dict, target_date) -> float:
+    """Apply property-level date/weekday BATNA overrides (offset or absolute batna)."""
+    if base_batna is None or target_date is None:
+        return base_batna
+    overrides = property_data.get('batna_overrides') or []
+    result = base_batna
+    for override in overrides:
+        try:
+            start = _normalize_to_date(override.get('start_date'))
+            end = _normalize_to_date(override.get('end_date'))
+            if start and target_date < start:
+                continue
+            if end and target_date > end:
+                continue
+            weekdays = override.get('weekdays')
+            if weekdays is not None and target_date.weekday() not in weekdays:
+                continue
+            if 'offset' in override and override['offset'] is not None:
+                result = result + float(override['offset'])
+            elif 'batna' in override and override['batna'] is not None:
+                result = float(override['batna'])
+        except Exception:
+            continue
+    return result
+
 def get_batna_for_listing(listing_id: str, date_value=None) -> Optional[float]:
     """Get BATNA value for a specific listing ID, optionally date-aware"""
     try:
@@ -462,14 +487,17 @@ def get_batna_for_listing(listing_id: str, date_value=None) -> Optional[float]:
                     # If split BATNA provided, choose weekday/weekend based on date
                     batna_weekday = listing.get('batna_weekday')
                     batna_weekend = listing.get('batna_weekend')
+                    base_batna = listing.get('batna')
                     if target_date and (batna_weekday is not None or batna_weekend is not None):
                         weekday_idx = target_date.weekday() # Mon=0
                         is_weekend = weekday_idx in (4, 5) # Fri, Sat
                         if is_weekend and batna_weekend is not None:
-                            return batna_weekend
-                        if not is_weekend and batna_weekday is not None:
-                            return batna_weekday
-                    return listing.get('batna')
+                            base_batna = batna_weekend
+                        elif (not is_weekend) and batna_weekday is not None:
+                            base_batna = batna_weekday
+                    if base_batna is None:
+                        return None
+                    return _apply_batna_overrides(float(base_batna), property_data, target_date)
         
         return None
     except Exception:
