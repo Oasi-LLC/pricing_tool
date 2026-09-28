@@ -300,7 +300,7 @@ properties:
     pms: hostaway
     listings:
       - {name: "Sunstrip", id: "320203", batna: 179.00}
-      - {name: "Malvern", id: "389561", batna: 600.00}
+      - {name: "Malvern", id: "389561", batna: 199.00, batna_weekday: 199.00, batna_weekend: 249.00}
       - {name: "Malvern (Loft Only) ", id: "511788", batna: 159.00}
     rate_group_mapping:
       rate_4: ["320203"] # Sunstrip
