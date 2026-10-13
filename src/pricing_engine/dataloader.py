@@ -103,13 +103,15 @@ def load_and_preprocess_data(property_name: str, property_config: dict) -> Tuple
         if not all(col in rate_table_df.columns for col in required_rate_cols):
              raise KeyError(f"Rate table missing one or more required columns: {required_rate_cols}")
 
-        # Clean rate columns by removing dollar signs and extra spaces
+        # Clean rate columns by removing dollar signs, thousands commas and extra spaces
         for rate_col in property_config.get('rate_group_mapping', {}).keys():
             if rate_col in rate_table_df:
                 # Convert to string type FIRST, handling potential non-string data gracefully
                 rate_table_df[rate_col] = rate_table_df[rate_col].astype(str)
-                # Now apply string operations
-                rate_table_df[rate_col] = rate_table_df[rate_col].str.replace('$', '', regex=False).str.strip()
+                # Now apply string operations. The sheet writes $1,000+ as "1,315"; left in, every such
+                # price failed to read and showed "❌ Error" on the price page.
+                rate_table_df[rate_col] = (rate_table_df[rate_col].str.replace('$', '', regex=False)
+                                           .str.replace(',', '', regex=False).str.strip())
                 # Optional: Convert back to numeric if needed later, coercing errors
                 # rate_table_df[rate_col] = pd.to_numeric(rate_table_df[rate_col], errors='coerce')
             else:
