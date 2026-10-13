@@ -1,6 +1,7 @@
 #!/bin/bash
-# Morning data pipeline — activates venv, then runs pl_daily + nightly pull + rules push.
-# Use --data-only to skip rules adjuster: ./scripts/run_morning_data_pipeline.sh --data-only
+# Morning data pipeline — activates venv, then runs pl_daily + nightly pull.
+# The rules push runs on Oasi's server daily at 07:00 Lisbon, so it is skipped here by default.
+# Only if the server is down: ./scripts/run_morning_data_pipeline.sh --with-rules
 
 set -euo pipefail
 

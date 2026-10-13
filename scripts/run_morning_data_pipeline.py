@@ -2,12 +2,16 @@
 """
 Morning data pipeline: generate pl_daily, pull nightly overrides, rules adjuster push.
 
+Since 13 Oct 2026 the rules step (3) runs on Oasi's server every day at 07:00 Lisbon,
+so a run from the command line fetches data only (steps 1-2) unless you ask for the
+rules on purpose. Running them here as well would apply them twice a day.
+
 Run from project root:
     ./scripts/run_morning_data_pipeline.sh
-    python scripts/run_morning_data_pipeline.py
-    python scripts/run_morning_data_pipeline.py --data-only        # pl_daily + nightly pull only
-    python scripts/run_morning_data_pipeline.py --dry-run          # rules check only, no push
-    python scripts/run_morning_data_pipeline.py --rules-push-only  # rules step only
+    python scripts/run_morning_data_pipeline.py                    # pl_daily + nightly pull only
+    python scripts/run_morning_data_pipeline.py --with-rules       # all 3 steps, pushes rules (only if the server is down)
+    python scripts/run_morning_data_pipeline.py --dry-run          # all 3 steps, rules checked but not pushed
+    python scripts/run_morning_data_pipeline.py --rules-push-only  # rules step only, pushes
 """
 
 import os
@@ -61,6 +65,7 @@ def _write_pipeline_summary(
     rules_push_ok,
     pipeline_ok,
     skip_rules=False,
+    skip_reason="--data-only",
 ):
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -90,7 +95,7 @@ def _write_pipeline_summary(
             f"  {'✅ SUCCESS' if nightly_pull_ok else '❌ FAILURE'}",
             "",
             "Step 3 — rules adjuster + Monday Fri/Sat LOS (onera, wb1, flo1, spm1)",
-            "  ⏭️ SKIPPED (--data-only)" if skip_rules else f"  {'✅ SUCCESS' if rules_ok and rules_push_ok else '❌ FAILURE'}",
+            f"  ⏭️ SKIPPED ({skip_reason})" if skip_rules else f"  {'✅ SUCCESS' if rules_ok and rules_push_ok else '❌ FAILURE'}",
             "",
             f"Overall pipeline: {'✅ SUCCESS' if pipeline_ok else '❌ FAILURE'}",
             "=" * 80,
@@ -118,6 +123,7 @@ def run_pipeline(
     rules_push_only=False,
     rules_dry_run=False,
     data_only=False,
+    skip_reason="--data-only",
 ):
     print("🌅 Morning data pipeline")
     print("=" * 80)
@@ -128,7 +134,7 @@ def run_pipeline(
     rules_push_ok = True
 
     if data_only:
-        print("⏭️ Data-only mode (--data-only): skipping rules adjuster")
+        print(f"⏭️ Data-only mode ({skip_reason}): skipping rules adjuster")
     if rules_push_only:
         skip_data_steps = True
         print("⏭️ Rules push only mode (--rules-push-only)")
@@ -174,7 +180,7 @@ def run_pipeline(
         print(f"Step 1 (pl_daily): {len(pl_successful)} ok, {len(pl_failed)} failed")
         print(f"Step 2 (nightly pull): {'SUCCESS' if nightly_pull_ok else 'FAILURE'}")
     if data_only:
-        print("Step 3 (rules adjuster): SKIPPED")
+        print(f"Step 3 (rules adjuster): SKIPPED ({skip_reason})")
     else:
         print(f"Step 3 (rules adjuster): {'SUCCESS' if rules_ok and rules_push_ok else 'FAILURE'}")
     print(f"Overall pipeline: {'SUCCESS' if pipeline_ok else 'FAILURE'}")
@@ -189,20 +195,38 @@ def run_pipeline(
         rules_push_ok,
         pipeline_ok,
         skip_rules=data_only,
+        skip_reason=skip_reason,
     )
 
     return pipeline_ok
+
+
+SERVER_NOTE = "rules run on Oasi's server at 07:00 Lisbon; add --with-rules to run them here"
+
+
+def cli_mode(argv):
+    """Read the command-line switches. The rules step only runs from here when asked
+    for on purpose (--with-rules, --dry-run, --rules-push-only); otherwise data only.
+    Oasi's server calls run_pipeline() directly and is not affected by this."""
+    rules_push_only = "--rules-push-only" in argv
+    rules_dry_run = "--dry-run" in argv
+    with_rules = "--with-rules" in argv
+    data_only = "--data-only" in argv
+    skip_reason = "--data-only"
+    if not data_only and not (with_rules or rules_dry_run or rules_push_only):
+        data_only = True
+        skip_reason = SERVER_NOTE
+    args = [a for a in argv if a not in ("--rules-push-only", "--dry-run", "--data-only", "--with-rules")]
+    return rules_push_only, rules_dry_run, data_only, skip_reason, args
 
 
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(line_buffering=True)
 
-    argv = sys.argv[1:]
-    rules_push_only = "--rules-push-only" in argv
-    rules_dry_run = "--dry-run" in argv
-    data_only = "--data-only" in argv
-    args = [a for a in argv if a not in ("--rules-push-only", "--dry-run", "--data-only")]
+    rules_push_only, rules_dry_run, data_only, skip_reason, args = cli_mode(sys.argv[1:])
+    if skip_reason == SERVER_NOTE:
+        print(f"ℹ️ Fetching data only: {SERVER_NOTE}.")
 
     if len(args) > 2:
         cli_start_date = args[0]
@@ -218,5 +242,6 @@ if __name__ == "__main__":
         rules_push_only=rules_push_only,
         rules_dry_run=rules_dry_run,
         data_only=data_only,
+        skip_reason=skip_reason,
     )
     sys.exit(0 if success else 1)

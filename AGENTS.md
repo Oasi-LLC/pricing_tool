@@ -19,8 +19,9 @@ This is a Python (Streamlit) multi-property hotel/rental rate-management tool. G
 - `./venv/bin/python run_pricing.py --property <key>` (keys are the `data/<key>/` dirs, e.g. `atx1`). Writes to `output/`. This path does NOT call the live API (uses local data files).
 
 ### Morning data pipeline — live API, mutating
-- `./scripts/run_morning_data_pipeline.sh` hits the **live PriceLabs API**. A full run: (1) regenerates `pl_daily` for all 9 properties (long — ~15-20 min of API calls), (2) pulls nightly overrides, (3) runs the rules adjuster and **pushes live rate overrides** to PriceLabs for `onera`, `wb1`, `flo1`.
-- Use `--dry-run` to exercise steps 1-3 without pushing live rates (safe for verification). Use `--rules-push-only` to skip the long data-generation steps and only run the rules step.
+- `./scripts/run_morning_data_pipeline.sh` hits the **live PriceLabs API**. By default it (1) regenerates `pl_daily` for all 9 properties (long — ~15-20 min of API calls) and (2) pulls nightly overrides — fresh data for the pricing tool.
+- **Step (3), the rules adjuster + Monday weekend 1-night opening, runs on Oasi's server every day at 07:00 Lisbon (since 13 Oct 2026) and is SKIPPED by default here**, so the rules are not pushed twice a day. Do not add `--with-rules` unless the user says the server's run did not happen; it pushes live rate overrides to PriceLabs for `onera`, `wb1`, `flo1`, `spm1`.
+- Use `--dry-run` to exercise steps 1-3 without pushing live rates (safe for verification). Use `--rules-push-only` to skip the long data-generation steps and only run (and push) the rules step.
 - Summaries are written to `logs/morning_data_pipeline_summary.txt` and `logs/rules_adjuster_automation_summary.txt`. The pipeline emits verbose `🔍 DEBUG:` lines to stdout — this is normal, not an error.
 
 ### Gotchas
