@@ -1,0 +1,169 @@
+# Lowest acceptable prices ("BATNA") for every unit -- ONE list for all three price tools:
+#   - the price changes page (price-session), read from this file on GitHub
+#   - the 5% program (5percent-price-change-pricelabs, run by five-percent-run), read from this file on GitHub
+#   - the old price page (this repo, app/app_2.py via utils/backend_interface.get_batna_for_listing)
+# Change a price HERE ONLY. The `batna` fields in config/properties.yaml and in the 5% program's
+# properties_config.yaml are only used for a unit that is missing from this list.
+#
+# Source: Katarina's Google Doc "BATNA Document"
+#   https://docs.google.com/document/d/1k1n-wQ967FCOSvxpwC7U8rn7rxFlgNxHYPiDJtvjs7w
+#   copied 28 Oct 2026 (doc last edited 16 Oct 2026). She approved one shared list (late Oct 2026).
+#
+# Each unit (by its PriceLabs listing id) has a list of rules. The FIRST rule that fits the night wins:
+#   months: [11, 12, 1, 2]        only nights in these months
+#   start / end: "2026-12-01"     only nights between these dates (both included)
+#   days: [fri, sat]              only these days of the week
+#   batna: 209                    the lowest price
+#   week: [mon, tue, wed, thu, fri, sat, sun]   instead of batna: a lowest price for each day of the week
+# Every unit's last rule has no condition, so every night has a lowest price.
+#
+# Day groups (her doc, same as src/pricing_engine/utils.get_day_group): Mon-Wed, Thu-Sun = Thursday + Sunday, Fri-Sat.
+# LaFave seasons (her doc + her answer 16 Oct 2026): low = Nov-Feb, high = Mar-Jun + Sep-Oct, summer = Jul-Aug.
+
+lafave_room_types:  # her doc's LaFave tables, one per room type, prices Mon..Sun
+  house: &lafave_house  # House (6BR/4BA)
+    - {months: [7, 8], week: [1280, 1280, 1325, 1505, 1505, 1595, 1370]}               # summer
+    - {months: [11, 12, 1, 2], week: [790, 760, 825, 940, 965, 1030, 850]}             # low
+    - {week: [1451, 1451, 1494, 1667, 1667, 1753, 1537]}                               # high (Mar-Jun, Sep-Oct)
+  suite_big: &lafave_suite_big  # Suite BIG (1BR/1BA)
+    - {months: [7, 8], week: [402, 402, 417, 477, 477, 508, 432]}
+    - {months: [11, 12, 1, 2], week: [210, 200, 220, 250, 255, 275, 225]}
+    - {week: [511, 511, 527, 592, 592, 623, 543]}
+  suite_small: &lafave_suite_small  # Suite SMALL (1BR/1BA)
+    - {months: [7, 8], week: [348, 348, 363, 420, 420, 448, 377]}
+    - {months: [11, 12, 1, 2], week: [175, 170, 185, 210, 215, 230, 190]}
+    - {week: [430, 430, 444, 502, 502, 531, 458]}
+  deluxe_villa: &lafave_deluxe_villa  # Deluxe Villa (2BR/1BA)
+    - {months: [7, 8], week: [465, 465, 484, 561, 561, 599, 504]}
+    - {months: [11, 12, 1, 2], week: [265, 255, 275, 315, 325, 345, 285]}
+    - {week: [583, 583, 603, 681, 681, 720, 622]}
+  premium_villa: &lafave_premium_villa  # Premium Villa (2BR/2BA)
+    - {months: [7, 8], week: [701, 701, 732, 853, 853, 913, 762]}
+    - {months: [11, 12, 1, 2], week: [315, 305, 330, 375, 385, 410, 340]}
+    - {week: [861, 861, 888, 996, 996, 1050, 915]}
+  villa_game: &lafave_villa_game  # Villa Game (2BR/2BA)
+    - {months: [7, 8], week: [644, 644, 668, 764, 764, 813, 692]}
+    - {months: [11, 12, 1, 2], week: [380, 365, 395, 450, 465, 495, 410]}
+    - {week: [774, 774, 799, 896, 896, 944, 823]}
+  jmt_villa: &lafave_jmt_villa  # J.MT. Villa (3BR/2BA)
+    - {months: [7, 8], week: [836, 836, 866, 985, 985, 1045, 896]}
+    - {months: [11, 12, 1, 2], week: [450, 435, 475, 535, 550, 585, 485]}
+    - {week: [987, 987, 1017, 1135, 1135, 1193, 1047]}
+  premier_villa: &lafave_premier_villa  # Premier Villa (3BR/3BA)
+    - {months: [7, 8], week: [871, 871, 902, 1025, 1025, 1087, 933]}
+    - {months: [11, 12, 1, 2], week: [465, 450, 490, 555, 570, 610, 505]}
+    - {week: [1035, 1035, 1066, 1190, 1190, 1251, 1097]}
+
+onera_basse1:  # her doc "Basse 1": Hard / Soft / Haus by day group
+  hard: &onera_hard
+    - {days: [fri, sat], batna: 339}
+    - {days: [thu, sun], batna: 229}
+    - {batna: 209}
+  soft: &onera_soft
+    - {days: [fri, sat], batna: 309}
+    - {days: [thu, sun], batna: 209}
+    - {batna: 189}
+  haus: &onera_haus
+    - {days: [fri, sat], batna: 239}
+    - {days: [thu, sun], batna: 189}
+    - {batna: 169}
+
+listings:
+  # ---- Onera Fredericksburg (onera) ----
+  "203812___364773": {name: "Walnut House", floors: *onera_hard}
+  "203812___364776": {name: "Spyglass", floors: *onera_hard}
+  "203812___364778": {name: "Live Oak Lodge", floors: *onera_hard}
+  "203812___362535": {name: "Cocoon", floors: *onera_soft}
+  "203812___364779": {name: "Lantana Dome", floors: *onera_soft}
+  "203812___364780": {name: "Sage Safari", floors: *onera_soft}
+  "203812___364782": {name: "Buckeye Bungalow", floors: *onera_soft}
+  "203812___634080": {name: "Bluebonnet", floors: *onera_soft}
+  "203812___490007": {name: "Cedar Haus", floors: *onera_haus}
+  "203812___490024": {name: "Juniper Haus", floors: *onera_haus}
+  "203812___528745": {name: "Pecan Haus", floors: *onera_haus}
+  "203812___364781": {name: "Monarch", floors: [{batna: 379}]}  # not in her doc; above every "Hard" price, kept from the tools
+  "203812___643757": {name: "Great Lodge", floors: [{batna: 1352}]}  # not in her doc; kept from the tools
+  "203812___643775": {name: "Great Lodge: King Room", floors: [{batna: 169}]}  # doc "Lodge king"
+  "203812___657152": {name: "Great Lodge: King Room (Accessible)", floors: [{batna: 169}]}  # doc "Lodge king"
+  "203812___655826": {name: "Cypress Lodge | Sleeps 2", floors: [{batna: 169}]}
+  "203812___643762": {name: "Cypress Lodge | Sleeps 4", floors: [{batna: 289}]}
+  "203812___655827": {name: "Cypress Lodge | Sleeps 6", floors: [{batna: 394}]}
+  "203812___643771": {name: "Diamond", floors: [{batna: 229}]}
+  "203812___643773": {name: "Monolith", floors: [{batna: 229}]}
+  "203812___643760": {name: "Post Oak", floors: [{batna: 169}]}
+  "203812___643764": {name: "Quonset", floors: [{batna: 209}]}
+  "203812___643772": {name: "Spiral", floors: [{batna: 229}]}
+  "203812___643766": {name: "Winecup", floors: [{batna: 209}]}
+
+  # ---- Onera Wimberley (wb1) ----
+  "316005___633306": {name: "Greenhouse", floors: [{batna: 169}]}
+  "316005___633307": {name: "Greenhouse ADA", floors: [{batna: 169}]}
+  "316005___633308": {name: "Greenhouse Pet", floors: [{batna: 169}]}
+  "316005___633310": {name: "Spyglass", floors: [{batna: 189}]}
+  "316005___633311": {name: "Spyglass ADA", floors: [{batna: 189}]}
+  "316005___633312": {name: "Spyglass Pet", floors: [{batna: 189}]}
+
+  # ---- Austin (atx1). Doc "Malvern (5BR)" = Malvern (5 bedrooms in PriceLabs); doc "Malvern" = the Loft ----
+  "320203": {name: "Sunstrip", floors: [{batna: 179}]}
+  "389561": {name: "Malvern", floors: [{batna: 600}]}
+  "511788": {name: "Malvern (Loft Only)", floors: [{batna: 159}]}
+
+  # ---- Spoon Mountain (spm1) ----
+  "278915": {name: "Chisum", floors: [{batna: 189}]}
+  "303587": {name: "Kingfisher", floors: [{batna: 189}]}
+  "303588": {name: "Shaka", floors: [{batna: 189}]}
+
+  # ---- FLOHOM (flo1). Dec 2026 Mon-Wed = $25 lower (Rohit, 23 Sep 2026, both tools) ----
+  "146908": {name: "FLOHOM 1", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 275}, {batna: 300}]}
+  "146944": {name: "FLOHOM 2", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 200}, {batna: 225}]}
+  "146946": {name: "FLOHOM 3", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 100}, {batna: 125}]}
+  "260001": {name: "FLOHOM 4", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 250}, {batna: 275}]}
+  "278502": {name: "FLOHOM 5", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 175}, {batna: 200}]}
+  "345316": {name: "FLOHOM 6", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 275}, {batna: 300}]}
+  "366176": {name: "FLOHOM 7", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 225}, {batna: 250}]}
+  "376368": {name: "FLOHOM 8", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 150}, {batna: 175}]}
+  "383097": {name: "FLOHOM 9", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 150}, {batna: 175}]}
+  "404358": {name: "FLOHOM 10", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 225}, {batna: 250}]}
+  "427313": {name: "FLOHOM 11", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 125}, {batna: 150}]}
+  "422608": {name: "FLOHOM 12", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 225}, {batna: 250}]}
+  "485833": {name: "FLOHOM 13", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 290}, {batna: 315}]}
+  "407612": {name: "FLOHOM 14", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 125}, {batna: 150}]}
+  "467334": {name: "FLOHOM 15", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 200}, {batna: 225}]}
+  "510832": {name: "FLOHOM 16", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 275}, {batna: 300}]}
+  "514132": {name: "Flohom 17", floors: [{start: "2026-12-01", end: "2026-12-31", days: [mon, tue, wed], batna: 225}, {batna: 250}]}
+
+  # ---- Blue Ridge (blueridge). Doc "Little Luxe: $200, $300" = Sun-Thu, Fri-Sat ----
+  "6a74a4b9067fda0013c87525": {name: "Little Luxe Lodge", floors: [{days: [fri, sat], batna: 300}, {batna: 200}]}
+  "6a74a4c0067fda0013c8769e": {name: "Luxe Lodge A-Frame", floors: [{days: [fri, sat], batna: 800}, {batna: 550}]}
+
+  # ---- LaFave Zion (lafavezion) ----
+  "4140___8114": {name: "(3BR/2BA) Johnson Mountain Villa", floors: *lafave_jmt_villa}
+  "4140___8115": {name: "(6BR/4BA) The Gallery House", floors: *lafave_house}
+  "4140___8117": {name: "Suite BIG (1BR/1BA) Temple of Sinawava", floors: *lafave_suite_big}
+  "4140___8118": {name: "Suite BIG (1BR/1BA) The Sentinel", floors: *lafave_suite_big}
+  "4140___8119": {name: "Suite BIG (1BR/1BA) The Sundial", floors: *lafave_suite_big}
+  "4140___8120": {name: "Suite SMALL (1BR/1BA) The Watchman", floors: *lafave_suite_small}
+  "4140___8121": {name: "Suite SMALL (1BR/1BA) The Zion", floors: *lafave_suite_small}
+  "4140___8122": {name: "Villa Game (2BR/2BA) Emerald Pools", floors: *lafave_villa_game}
+  "4140___8123": {name: "Villa Game (2BR/2BA) The Subway", floors: *lafave_villa_game}
+  "4140___8124": {name: "Villa Game (2BR/2BA) Meridian Tower", floors: *lafave_villa_game}
+  "4140___8131": {name: "Villa Game (2BR/2BA) Lava Point", floors: *lafave_villa_game}
+  "4140___8125": {name: "Premium Villa (2BR/2BA) Checkerboard Mesa", floors: *lafave_premium_villa}
+  "4140___8126": {name: "Premium Villa (2BR/2BA) Echo Canyon", floors: *lafave_premium_villa}
+  "4140___8127": {name: "Premium Villa (2BR/2BA) Mountain of the Sun", floors: *lafave_premium_villa}
+  "4140___8128": {name: "Premium Villa (2BR/2BA) Mystery Falls", floors: *lafave_premium_villa}
+  "4140___8129": {name: "Premium Villa (2BR/2BA) Big Springs", floors: *lafave_premium_villa}
+  "4140___8130": {name: "Premium Villa (2BR/2BA) East Temple", floors: *lafave_premium_villa}
+  "4140___8132": {name: "Premium Villa (2BR/2BA) Phantom Valley", floors: *lafave_premium_villa}
+  "4140___8133": {name: "Premium Villa (2BR/2BA) Pine Creek", floors: *lafave_premium_villa}
+  "4140___8134": {name: "Deluxe Villa (2BR/1BA) Hidden Canyon", floors: *lafave_deluxe_villa}
+  "4140___8135": {name: "Deluxe Villa (2BR/1BA) Kolob Arch", floors: *lafave_deluxe_villa}
+  "4140___8136": {name: "Deluxe Villa (2BR/1BA) Northgate Peaks", floors: *lafave_deluxe_villa}
+  "4140___8137": {name: "Deluxe Villa (2BR/1BA) Orderville Canyon", floors: *lafave_deluxe_villa}
+  "4140___8138": {name: "Deluxe Villa (2BR/1BA) Kayenta", floors: *lafave_deluxe_villa}
+  "4140___8139": {name: "Deluxe Villa (2BR/1BA) Mount Kinesava", floors: *lafave_deluxe_villa}
+  "4140___8140": {name: "Deluxe Villa (2BR/1BA) Weeping Rock", floors: *lafave_deluxe_villa}
+  "4140___8141": {name: "Premier Villa (3BR/3BA) Angels Landing", floors: *lafave_premier_villa}
+  "4140___8142": {name: "Premier Villa (3BR/3BA) The Narrows", floors: *lafave_premier_villa}
+  "4140___8143": {name: "Premier Villa (3BR/3BA) Cathedral Mountain", floors: *lafave_premier_villa}
+  "4140___8144": {name: "Premier Villa (3BR/3BA) Virgin River", floors: *lafave_premier_villa}

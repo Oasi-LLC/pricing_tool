@@ -13,8 +13,10 @@ from rates.logging_setup import setup_logging, log_price_update
 # Assuming PYTHONPATH is set correctly or the structure allows these imports
 # Adjust relative paths if needed based on execution context
 from src.pricing_engine import dataloader, calculator, utils
+from utils import batna_floors
 
 CONFIG_PATH = Path("config/properties.yaml")
+BATNA_PATH = Path("config/batna.yaml")  # the ONE list of lowest prices (see load_batna_list)
 OUTPUT_DIR = Path("data/outputs")
 LOG_DIR = Path("logs") # <-- Define log directory
 LOG_DIR.mkdir(parents=True, exist_ok=True) # <-- Ensure log directory exists
@@ -471,15 +473,32 @@ def _apply_batna_overrides(base_batna: float, property_data: dict, target_date) 
             continue
     return result
 
+@st.cache_data(ttl=600)
+def load_batna_list():
+    """The ONE list of lowest prices (config/batna.yaml = Katarina's BATNA doc), shared with the price changes page and
+    the 5% program. Raises ValueError if it can't be read exactly."""
+    with open(BATNA_PATH, 'r') as f:
+        return batna_floors.parse(yaml.safe_load(f))
+
 def get_batna_for_listing(listing_id: str, date_value=None) -> Optional[float]:
-    """Get BATNA value for a specific listing ID, optionally date-aware"""
+    """Get BATNA value for a specific listing ID, optionally date-aware.
+    A listing in config/batna.yaml takes its lowest price from there (by season / day of week); the batna fields in
+    properties.yaml are only for a listing missing from that list."""
     try:
+        target_date = _normalize_to_date(date_value)
+        try:
+            shared = load_batna_list()
+        except Exception as e:
+            st.error(f"Couldn't read the lowest-prices list {BATNA_PATH}: {e}. No BATNA shown or applied.")
+            return None
+        if str(listing_id) in shared:
+            # no night given: no single lowest price (it depends on the night), so none
+            return batna_floors.floor_for(shared, listing_id, target_date) if target_date else None
+
         properties_config = load_properties_config()
         if not properties_config:
             return None
-        
-        target_date = _normalize_to_date(date_value)
-            
+
         # Search through all properties for the listing
         for property_data in properties_config.values():
             for listing in property_data.get('listings', []):

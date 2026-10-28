@@ -1,3 +1,5 @@
+# Lowest prices: config/batna.yaml (the ONE list, Katarina's BATNA doc) wins for every listing in it.
+# The batna / batna_weekday / batna_weekend / batna_overrides fields below are only used for a listing missing from it.
 properties:
   onera: # Combined Fredericksburg Basse 1 & 2 properties
     # Documentation: Defines configuration for the combined 'Onera' property.
