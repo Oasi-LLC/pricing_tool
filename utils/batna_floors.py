@@ -1,12 +1,30 @@
-"""The ONE list of lowest prices (config/batna.yaml), read the same way by all three price tools.
+"""The ONE list of lowest prices (batna.yaml in its own private repo, Oasi-LLC/batna), read the same way by every
+price tool.
 
-Source: Oasi-LLC/pricing_tool utils/batna_floors.py. Copies: price-session floors.py, five-percent-run floors.py.
-Keep all three byte-identical.
+Identical copies: pricing_tool utils/batna_floors.py, price-session floors.py, five-percent-run floors.py,
+pricing-digest floors.py. Keep all four byte-identical.
 
-    floors = parse(yaml.safe_load(text))     # refuses a list it can't read exactly (raises ValueError)
+    floors = parse(yaml.safe_load(fetch(token)))  # fetch needs a GitHub key that can see Oasi-LLC/batna;
+                                                  # parse refuses a list it can't read exactly (raises ValueError)
     floor_for(floors, "4140___8114", date(2026, 11, 3))  # -> 435.0, or None if the unit isn't in the list
 """
 from datetime import date
+
+SOURCE = "https://api.github.com/repos/Oasi-LLC/batna/contents/batna.yaml"
+
+
+def fetch(token, session=None, timeout=30):
+    """The list's text, read from its private repo. Raises if there is no key or the list can't be read."""
+    if not token:
+        raise RuntimeError("no GitHub key to read the lowest-prices list (Oasi-LLC/batna)")
+    if session is None:
+        import requests
+        session = requests
+    r = session.get(SOURCE, timeout=timeout,
+                    headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.raw"})
+    r.raise_for_status()
+    return r.text
+
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 RULE_KEYS = {"months", "start", "end", "days", "batna", "week"}

@@ -113,6 +113,9 @@ st.set_page_config(layout="wide", page_title="Rate Review Tool")
 # Title
 st.title("Internal Rate Review & Management Tool")
 
+if backend_interface.load_batna_list()[1]:
+    st.error("The lowest prices (BATNA) can't be read here, so none are shown or applied.")
+
 # Add this helper at the top of the file (after imports)
 def rerun():
     if hasattr(st, 'rerun'):

@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import datetime
@@ -16,7 +17,6 @@ from src.pricing_engine import dataloader, calculator, utils
 from utils import batna_floors
 
 CONFIG_PATH = Path("config/properties.yaml")
-BATNA_PATH = Path("config/batna.yaml")  # the ONE list of lowest prices (see load_batna_list)
 OUTPUT_DIR = Path("data/outputs")
 LOG_DIR = Path("logs") # <-- Define log directory
 LOG_DIR.mkdir(parents=True, exist_ok=True) # <-- Ensure log directory exists
@@ -473,23 +473,34 @@ def _apply_batna_overrides(base_batna: float, property_data: dict, target_date) 
             continue
     return result
 
+def _github_token() -> str:
+    """The key that reads the private lowest-prices repo: secret GITHUB_TOKEN (Streamlit settings) or env var."""
+    try:
+        token = st.secrets.get("GITHUB_TOKEN", "")
+    except Exception:  # no secrets file (running locally)
+        token = ""
+    return (token or os.environ.get("GITHUB_TOKEN", "")).strip()
+
 @st.cache_data(ttl=600)
 def load_batna_list():
-    """The ONE list of lowest prices (config/batna.yaml = Katarina's BATNA doc), shared with the price changes page and
-    the 5% program. Raises ValueError if it can't be read exactly."""
-    with open(BATNA_PATH, 'r') as f:
-        return batna_floors.parse(yaml.safe_load(f))
+    """The ONE list of lowest prices (batna.yaml in the private repo Oasi-LLC/batna = Katarina's BATNA doc), shared
+    with every price tool. -> (list, None), or (None, reason) if there's no key or it can't be read exactly.
+    Cached 10 min either way, so a failure isn't retried on every row."""
+    try:
+        return batna_floors.parse(yaml.safe_load(batna_floors.fetch(_github_token()))), None
+    except Exception as e:
+        logging.warning("lowest-prices list not read: %s", e)
+        return None, str(e)
 
 def get_batna_for_listing(listing_id: str, date_value=None) -> Optional[float]:
     """Get BATNA value for a specific listing ID, optionally date-aware.
-    A listing in config/batna.yaml takes its lowest price from there (by season / day of week); the batna fields in
-    properties.yaml are only for a listing missing from that list."""
+    A listing in the lowest-prices list (Oasi-LLC/batna) takes its lowest price from there (by season / day of week);
+    the batna fields in properties.yaml are only for a listing missing from that list. If the list can't be read, no
+    BATNA at all (the page says so once, at the top)."""
     try:
         target_date = _normalize_to_date(date_value)
-        try:
-            shared = load_batna_list()
-        except Exception as e:
-            st.error(f"Couldn't read the lowest-prices list {BATNA_PATH}: {e}. No BATNA shown or applied.")
+        shared, problem = load_batna_list()
+        if problem:
             return None
         if str(listing_id) in shared:
             # no night given: no single lowest price (it depends on the night), so none
